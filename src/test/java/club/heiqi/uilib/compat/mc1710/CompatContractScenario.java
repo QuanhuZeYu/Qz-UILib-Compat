@@ -49,6 +49,7 @@ public final class CompatContractScenario {
     private static void actual(String angelica, String ae2, String expected, boolean publicContext) throws Exception {
         try (Resources loader = new Resources(new URL[] {new File(angelica).toURI().toURL(), new File(ae2).toURI().toURL()})) {
             require(expected.equals(AngelicaAbi.select(loader)), "选错实际Angelica ABI");
+            actualIrisInputs(angelica, expected);
             ClassNode glsm = node(loader, "com.gtnewhorizons.angelica.glsm.GLStateManager");
             MethodNode ctx = method(glsm, "ctx", "()Lcom/gtnewhorizons/angelica/glsm/GLContextState;");
             require(((ctx.access & Opcodes.ACC_PUBLIC) != 0) == publicContext, "ctx可见性证据变化");
@@ -81,6 +82,27 @@ public final class CompatContractScenario {
             System.out.println("ACTUAL_ABI_PASS " + expected + " ctxPublic=" + publicContext + " AE2originalBody=1 new/end/call=1 targetLoads=0");
         }
     }
+    /** 直接执行实际 Jar 的输入状态创建；header 替身无法验证枚举工厂与字段值。 */
+    private static void actualIrisInputs(String angelica, String expected) throws Exception {
+        try (URLClassLoader actual = new URLClassLoader(new URL[] {new File(angelica).toURI().toURL()}, getLoader())) {
+            Class<?> inputs = actual.loadClass("net.coderbot.iris.gbuffer_overrides.matching.InputAvailability");
+            Class<?> adapter = Class.forName("club.heiqi.uilib.compat.mc1710.angelica.shared.IrisInputAvailability");
+            Constructor<?> binding = adapter.getDeclaredConstructor(Class.class);
+            binding.setAccessible(true);
+            Object factory = binding.newInstance(inputs);
+            Method create = adapter.getDeclaredMethod("create", boolean.class, boolean.class);
+            create.setAccessible(true);
+            for (boolean texture : new boolean[] {false, true}) for (boolean lightmap : new boolean[] {false, true}) {
+                Object value = create.invoke(factory, texture, lightmap);
+                require(value.getClass() == inputs, "输入状态必须来自实际 Iris 类型");
+                require(inputs.getField("texture").getBoolean(value) == texture, "纹理输入状态错误");
+                require(inputs.getField("lightmap").getBoolean(value) == lightmap, "光照输入状态错误");
+                require(((Number) inputs.getMethod("pack").invoke(value)).intValue() == ((texture ? 1 : 0) | (lightmap ? 2 : 0)), "输入状态编码错误");
+            }
+            System.out.println("ACTUAL_IRIS_INPUTS_PASS " + expected + " enum=" + inputs.isEnum() + " combinations=4");
+        }
+    }
+
     private static Field field(Class<?> type, String name) throws Exception { Field field = type.getDeclaredField(name); field.setAccessible(true); return field; }
     private static Method declared(Class<?> type, String name, Class<?>... parameters) throws Exception { Method method = type.getDeclaredMethod(name, parameters); method.setAccessible(true); return method; }
     private static void monitor(boolean logical) throws Exception {

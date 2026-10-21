@@ -9,7 +9,6 @@ import club.heiqi.uilib.host.client.gl.GlProgramScope;
 import club.heiqi.uilib.host.client.gl.GlProgramAttribute;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -127,7 +126,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
                         "net.coderbot.iris.gbuffer_overrides.matching.InputAvailability",
                         false,
                         loader);
-        Constructor<?> inputsConstructor = inputsType.getConstructor(boolean.class, boolean.class);
+        IrisInputAvailability inputAvailability = new IrisInputAvailability(inputsType);
         setInputs = type.getMethod("setInputs", inputsType);
         Method getPhase = type.getMethod("getPhase");
         setPhase = type.getMethod("setPhase", getPhase.getReturnType());
@@ -158,7 +157,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             if (captured != null && captured.active) setPhase.invoke(pipeline, captured.phase);
             setTranslucency.invoke(pipeline, Boolean.TRUE);
             setInputs.invoke(
-                    pipeline, inputsConstructor.newInstance(true, context.state.lightmapActive));
+                    pipeline, inputAvailability.create(true, context.state.lightmapActive));
             rebind.invoke(pipeline);
             programId =
                     ((Number) type.getMethod("getActivePassProgramId").invoke(pipeline)).intValue();
