@@ -185,12 +185,13 @@ tasks.register('abiInputEvidence') {
         output.text = JsonOutput.prettyPrint(JsonOutput.toJson(entries)) + '\n'
     }
 }
+// Groovy 的 args [list] 会被解析为下标访问；显式 setArgs(...) 确保传入完整真实 Jar 参数列表。
 tasks.register('compatContractScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.CompatContractScenario'
     dependsOn 'abiInputEvidence'
-    doFirst { args ['angelica2210Abi', 'ae21050Abi', 'angelica2228Abi', 'ae21080Abi'].collect { actualJar(it).absolutePath } }
+    doFirst { setArgs(['angelica2210Abi', 'ae21050Abi', 'angelica2228Abi', 'ae21080Abi'].collect { actualJar(it).absolutePath }) }
 }
 tasks.register('gtnhCharacterMappingScenario', JavaExec) {
     dependsOn testClasses
@@ -245,7 +246,7 @@ tasks.register('irisPassTargetScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.IrisPassTargetGlScenario'
-    doFirst { args ['angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath } }
+    doFirst { setArgs(['angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath }) }
 }
 
 if (providers.gradleProperty('compatPrismRoot').isPresent()) check.dependsOn 'irisPassTargetScenario'
@@ -269,7 +270,7 @@ tasks.register('unimixinsPluginScenario', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.UniMixinsPluginScenario'
     dependsOn 'abiInputEvidence'
-    doFirst { args ['unimixinsAbi', 'angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath } }
+    doFirst { setArgs(['unimixinsAbi', 'angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath }) }
 }
 check.dependsOn 'unimixinsPluginScenario', 'verifyArtifact', 'compatContractScenario', 'angelicaReplayScenario', 'irisProducerBatchScenario', 'nativeSdlTextInputScenario'
 publishing {
