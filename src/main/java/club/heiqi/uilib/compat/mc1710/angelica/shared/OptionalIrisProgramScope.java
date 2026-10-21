@@ -162,9 +162,8 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             programId =
                     ((Number) type.getMethod("getActivePassProgramId").invoke(pipeline)).intValue();
             if (programId <= 0) throw new IllegalStateException("Iris当前font pass没有可提交program");
-            if (gl.glGetInteger(GlTokens.GL_DRAW_FRAMEBUFFER_BINDING) != context.drawFramebuffer)
-                throw new IllegalStateException(
-                        "Iris font pass目标FBO与来源caller target不一致，不能覆盖pack pass强行回放");
+            // Pass.use 按实际 program 的 draw buffers 和 before/after 阶段绑定目标。
+            // 历史 caller 可以使用另一 FBO；保留 Iris 的选择，不以句柄相同误拒绝合法回放。
             List<Attribute> attributes = new ArrayList<Attribute>();
             int count = gl.glGetProgrami(programId, GlTokens.GL_ACTIVE_ATTRIBUTES);
             for (int i = 0; i < count; i++) {
