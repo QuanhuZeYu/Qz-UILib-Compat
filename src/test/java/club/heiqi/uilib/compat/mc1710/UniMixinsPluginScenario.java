@@ -91,6 +91,7 @@ public final class UniMixinsPluginScenario {
         try { unique(mapped(writer.toByteArray(), "org/spongepowered/asm/lib/")); } catch (AssertionError expected) { rejected = true; }
         if (!rejected) throw new AssertionError("未捕获实际双重声明回归");
         System.out.println("UNIMIXINS_DUPLICATE_GUARD_PASS currentUnique=true oldDualOverloadRejected=true");
-        if (args.length == 3) { actual(source, args[0], args[1], "v2210"); actual(source, args[0], args[2], "v2228"); }
+        if (args.length != 3) throw new IllegalArgumentException("必须提供正式 UniMixins 和两个 Angelica Jar");
+        actual(source, args[0], args[1], "v2210"); actual(source, args[0], args[2], "v2228");
     }
 }

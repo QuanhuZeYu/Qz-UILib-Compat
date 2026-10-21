@@ -18,4 +18,4 @@ GTNH 私用显示字符沿宿主中性 `textMapping()` 快照和共同格式解�
 
 ## 验证与安装
 
-完整 build 检查 Java8 输出及产物边界；用两个 Prism 实际 Angelica Jar 校验 descriptor、Mixin 选择与显示列表暂停所有权，覆盖缺席路径。安装输出 `build/install-manifest.json`，schemaVersion=1、host=legacy，列出精确文件和 Maven 依赖身份及 SHA256。安装必须显式选择目标实例；实机验收覆盖六向监控、移动/旋转镜头、数量变化、冷字形、开关来回切换与重进服；编译/ABI 检查不外推为实机成功。
+完整 build 检查 Java8 输出及产物边界；默认从明确公开 Maven 坐标获取两个实际 Angelica、AE2 与 UniMixins 正式发行 Jar，校验 descriptor、Mixin 选择与显示列表暂停所有权，覆盖缺席路径；`-PcompatPrismRoot` 保留为显式实机输入入口。安装输出 `build/install-manifest.json`，schemaVersion=1、host=legacy，列出精确文件和 Maven 依赖身份及 SHA256。安装必须显式选择目标实例；实机验收覆盖六向监控、移动/旋转镜头、数量变化、冷字形、开关来回切换与重进服；编译/ABI 检查不外推为实机成功。

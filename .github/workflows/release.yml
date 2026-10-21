@@ -1,0 +1,159 @@
+name: Compat release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已存在的发布 tag，例如 1.0.0-beta1'
+        required: true
+        type: string
+      confirm:
+        description: '发布确认短语：PUBLISH <tag>'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: compat-release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 校验既存 tag、确认短语与版本
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          TAG="$INPUT_TAG"
+          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-](alpha|beta|rc)[.-]?[0-9]+)?$ ]]; then
+            echo "tag 格式无效：$TAG" >&2; exit 1
+          fi
+          if [[ "$INPUT_CONFIRM" != "PUBLISH $TAG" ]]; then
+            echo "确认短语不匹配：需要 PUBLISH $TAG" >&2; exit 1
+          fi
+          test -f ".changelogs/$TAG.md" || { echo "缺少静态发布说明" >&2; exit 1; }
+          VERSION="${TAG#v}"
+          DECLARED="$(sed -n 's/^compatVersion=//p' gradle.properties | tr -d '\r')"
+          if [[ "$DECLARED" != "$VERSION" ]]; then
+            echo "gradle.properties 版本 $DECLARED 与 tag $TAG 不一致" >&2; exit 1
+          fi
+          if [[ "$(git rev-parse "refs/tags/$TAG^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+            echo "tag 未指向本次检出提交" >&2; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: 校验依赖准备和发布工具
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tools -p 'test_*.py'
+          node --test tools/release.test.mjs
+      - name: 下载同版本正式 Release Maven ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci
+          python tools/prepare-upstreams.py 2>&1 | tee build/ci/upstreams.log
+      - name: 从 tag 独立完整构建
+        shell: bash
+        env:
+          UILIB_JDK8: ${{ env.JAVA_HOME_8_X64 }}
+        run: |
+          set -euo pipefail
+          ./gradlew build releaseAssets --no-daemon --console=plain 2>&1 | tee build/ci/build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compat-release
+          compression-level: 0
+          path: build/release/
+          if-no-files-found: error
+      - name: 保存构建证据与失败报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-build-reports
+          path: |
+            build/reports/
+            build/test-results/
+            build/ci/upstreams.json
+            build/ci/upstreams.log
+            build/ci/build.log
+          if-no-files-found: warn
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: compat-release
+          path: release-assets
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 检出本次工作流的发布工具
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: tools/release.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: 创建或更新同一 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          node .release-tools/tools/release.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$TAG" \
+            --version "$VERSION" \
+            --title "Qz-UILib-Compat $VERSION" \
+            --asset "release-assets/qz_uilib_compat-$VERSION.jar" \
+            --asset "release-assets/qz-uilib-compat-$VERSION-maven.zip" \
+            --asset "release-assets/install-manifest.json" \
+            --changelog ".changelogs/$TAG.md" \
+            --commit "$COMMIT" \
+            --run-url "$RUN_URL" \
+            --scope "Compat 完整 build：Java8 字节码与生产包边界、真实 Angelica/AE2/UniMixins ABI、显示列表与缺席路径、GTNH 字符映射与 FreeType/HarfBuzz、RFB 原生输入无窗口回归；配套 UILib 5.0.0-beta3 Release Maven ZIP。窗口/GPU 与游戏实测保持显式入口，本次未执行。"

@@ -7,10 +7,10 @@ plugins { id 'java'; id 'maven-publish' }
 group = 'asia.quanhuzeyu.uilib'
 version = providers.gradleProperty('compatVersion').getOrElse('1.0.0-local.20261021.1')
 if (!(version.toString() ==~ /[A-Za-z0-9][A-Za-z0-9._+-]*/)) throw new GradleException('compatVersion必须是安全文件名与Java版本文本')
-// 与工作站及Minecraft宿主共用项目属性；开发组合由init加载器注入，显式-P仍优先。
+// 保留显式 Maven URL/版本入口；独立构建默认消费本仓下载的 Release Maven ZIP。
 def uilibVersion = findProperty('uilibVersion')?.toString() ?: '5.0.0-local.selection-20261021.1'
 def hostVersion = findProperty('uilibHostVersion')?.toString() ?: uilibVersion
-def uilibRepository = findProperty('uilibRepository')?.toString() ?: rootProject.file('../../build/maven').toURI().toString()
+def uilibRepository = findProperty('uilibRepository')?.toString() ?: layout.buildDirectory.dir('ci/maven').get().asFile.toURI().toString()
 repositories {
     mavenCentral { content { includeGroup 'org.lwjgl'; includeGroup 'org.lwjgl.lwjgl'; includeGroup 'org.joml'; includeGroup 'com.ibm.icu'; includeGroup 'org.ow2.asm' } }
     maven { url = uri(uilibRepository) }
@@ -20,7 +20,7 @@ repositories {
     maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
     mavenCentral()
 }
-configurations { hostInterface; coreInterface; platformInterface; lwjgl3Binding; rfbApi; nativeInputHost }
+configurations { hostInterface; coreInterface; platformInterface; lwjgl3Binding; rfbApi; nativeInputHost; angelica2210Abi; angelica2228Abi; ae21050Abi; ae21080Abi; unimixinsAbi }
 configurations.configureEach { transitive = false }
 dependencies {
     hostInterface "asia.quanhuzeyu.uilib:minecraft-host:$hostVersion:development-java8"
@@ -32,6 +32,12 @@ dependencies {
     compileOnly 'io.github.llamalad7:mixinextras-common:0.5.0'
     rfbApi 'com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches'
     nativeInputHost 'com.github.GTNewHorizons:lwjgl3ify:3.0.31:dev'
+    // 必须读取正式发行 Jar 的真实 descriptor；不能以 dev/API Jar 或缺席路径代替。
+    angelica2210Abi 'com.github.GTNewHorizons:Angelica:2.2.10@jar'
+    angelica2228Abi 'com.github.GTNewHorizons:Angelica:2.2.28@jar'
+    ae21050Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1050-GTNH@jar'
+    ae21080Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1080-GTNH@jar'
+    unimixinsAbi 'io.github.legacymoddingmc:unimixins:0.3.1@jar'
     testImplementation 'org.ow2.asm:asm-commons:9.9'
     compileOnly 'org.ow2.asm:asm-tree:9.9'
     compileOnly 'org.ow2.asm:asm:9.9'
@@ -151,17 +157,40 @@ tasks.register('installManifest') {
         output.text = JsonOutput.prettyPrint(JsonOutput.toJson([schemaVersion:1,host:'legacy',version:project.version.toString(),files:[[name:file.name,source:file.absolutePath,sha256:sha(file)]],dependencies:dependencies])) + '\n'
     }
 }
+def abiInputs = [
+    angelica2210Abi:'GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/angelica-2.2.10.jar',
+    ae21050Abi:'GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1050-GTNH.jar',
+    angelica2228Abi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar',
+    ae21080Abi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar',
+    unimixinsAbi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/+unimixins-all-1.7.10-0.3.1.jar'
+]
+// 旧实机入口继续可用；默认始终解析上面的公开正式坐标，缺失即失败。
+def actualJar = { String name ->
+    def prism = providers.gradleProperty('compatPrismRoot')
+    def artifact = prism.isPresent() ? file(prism.get() + '/instances/' + abiInputs[name]) : configurations.getByName(name).singleFile
+    if (!artifact.isFile()) throw new GradleException('真实 ABI 输入不存在：' + artifact)
+    artifact
+}
+tasks.register('abiInputEvidence') {
+    inputs.files providers.provider { abiInputs.keySet().collect { actualJar(it) } }
+    outputs.file layout.buildDirectory.file('reports/abi-inputs.json')
+    doLast {
+        def entries = abiInputs.keySet().collect { name ->
+            def artifact = actualJar(name)
+            def dependency = configurations.getByName(name).dependencies.iterator().next()
+            [coordinate:dependency.group + ':' + dependency.name + ':' + dependency.version, source:artifact.absolutePath, sha256:sha(artifact)]
+        }
+        def output = layout.buildDirectory.file('reports/abi-inputs.json').get().asFile
+        output.parentFile.mkdirs()
+        output.text = JsonOutput.prettyPrint(JsonOutput.toJson(entries)) + '\n'
+    }
+}
 tasks.register('compatContractScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.CompatContractScenario'
-    if (providers.gradleProperty('compatPrismRoot').isPresent()) {
-        def root = providers.gradleProperty('compatPrismRoot').get()
-        args root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/angelica-2.2.10.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1050-GTNH.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar'
-    }
+    dependsOn 'abiInputEvidence'
+    doFirst { args ['angelica2210Abi', 'ae21050Abi', 'angelica2228Abi', 'ae21080Abi'].collect { actualJar(it).absolutePath } }
 }
 tasks.register('gtnhCharacterMappingScenario', JavaExec) {
     dependsOn testClasses
@@ -216,11 +245,7 @@ tasks.register('irisPassTargetScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.IrisPassTargetGlScenario'
-    if (providers.gradleProperty('compatPrismRoot').isPresent()) {
-        def root = providers.gradleProperty('compatPrismRoot').get()
-        args root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/angelica-2.2.10.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar'
-    }
+    doFirst { args ['angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath } }
 }
 
 if (providers.gradleProperty('compatPrismRoot').isPresent()) check.dependsOn 'irisPassTargetScenario'
@@ -243,12 +268,29 @@ tasks.register('unimixinsPluginScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.UniMixinsPluginScenario'
-    if (providers.gradleProperty('compatPrismRoot').isPresent()) {
-        def root = providers.gradleProperty('compatPrismRoot').get()
-        args root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/+unimixins-all-1.7.10-0.3.1.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/angelica-2.2.10.jar',
-             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar'
-    }
+    dependsOn 'abiInputEvidence'
+    doFirst { args ['unimixinsAbi', 'angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath } }
 }
 check.dependsOn 'unimixinsPluginScenario', 'verifyArtifact', 'compatContractScenario', 'angelicaReplayScenario', 'irisProducerBatchScenario', 'nativeSdlTextInputScenario'
-publishing { publications { compat(MavenPublication) { from components.java } } }
+publishing {
+    publications { compat(MavenPublication) { from components.java } }
+    repositories { maven { name = 'release'; url = layout.buildDirectory.dir('release-maven') } }
+}
+// 从本次任务输出收集，避免发布 build/libs 中残留的其他版本。
+def releaseMavenZip = tasks.register('releaseMavenZip', Zip) {
+    dependsOn 'publishCompatPublicationToReleaseRepository'
+    from(layout.buildDirectory.dir('release-maven')) {
+        include project.group.toString().replace('.', '/') + '/' + project.name + '/' + project.version + '/**'
+    }
+    archiveFileName = "qz-uilib-compat-${project.version}-maven.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.register('releaseAssets', Sync) {
+    dependsOn 'installManifest', releaseMavenZip
+    from jar.archiveFile
+    from releaseMavenZip.flatMap { it.archiveFile }
+    from layout.buildDirectory.file('install-manifest.json')
+    into layout.buildDirectory.dir('release')
+}

@@ -162,6 +162,6 @@ public final class CompatContractScenario {
     public static void main(String[] args) throws Exception {
         absent(); monitor(false); monitor(true);
         if (args.length == 4) { actual(args[0], args[1], "v2210", false); actual(args[2], args[3], "v2228", true); }
-        else System.out.println("实际Jar ABI未配置：使用-PcompatPrismRoot选择两个实例");
+        else throw new IllegalArgumentException("必须提供两组正式 Angelica/AE2 Jar，不能跳过真实 ABI 检查");
     }
 }
