@@ -7,9 +7,10 @@ plugins { id 'java'; id 'maven-publish' }
 group = 'asia.quanhuzeyu.uilib'
 version = providers.gradleProperty('compatVersion').getOrElse('1.0.0-local.20261021.1')
 if (!(version.toString() ==~ /[A-Za-z0-9][A-Za-z0-9._+-]*/)) throw new GradleException('compatVersion必须是安全文件名与Java版本文本')
-def uilibVersion = providers.gradleProperty('uilibVersion').getOrElse('5.0.0-local.selection-20261021.1')
-def hostVersion = providers.gradleProperty('uilibHostVersion').getOrElse(uilibVersion)
-def uilibRepository = providers.gradleProperty('uilibRepository').getOrElse(rootProject.file('../../build/maven').toURI().toString())
+// 与工作站及Minecraft宿主共用项目属性；开发组合由init加载器注入，显式-P仍优先。
+def uilibVersion = findProperty('uilibVersion')?.toString() ?: '5.0.0-local.selection-20261021.1'
+def hostVersion = findProperty('uilibHostVersion')?.toString() ?: uilibVersion
+def uilibRepository = findProperty('uilibRepository')?.toString() ?: rootProject.file('../../build/maven').toURI().toString()
 repositories {
     mavenCentral { content { includeGroup 'org.lwjgl'; includeGroup 'org.lwjgl.lwjgl'; includeGroup 'org.joml'; includeGroup 'com.ibm.icu'; includeGroup 'org.ow2.asm' } }
     maven { url = uri(uilibRepository) }
