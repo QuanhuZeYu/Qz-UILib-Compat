@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "club.heiqi.uilib.compat.mixin",
+  "plugin": "club.heiqi.uilib.compat.mixin.CompatMixinPlugin",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [],
+  "client": [
+    "mc1710.angelica.v2210.AngelicaFontOrderMixin",
+    "mc1710.angelica.v2228.AngelicaFontOrderMixin",
+    "mc1710.ae2.rv3.MonitorFontCacheMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,200 @@
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+import groovy.json.JsonOutput
+
+buildscript { repositories { mavenCentral() }; dependencies { classpath 'org.ow2.asm:asm:9.9' } }
+plugins { id 'java'; id 'maven-publish' }
+group = 'asia.quanhuzeyu.uilib'
+version = providers.gradleProperty('compatVersion').getOrElse('1.0.0-local.20261021.1')
+if (!(version.toString() ==~ /[A-Za-z0-9][A-Za-z0-9._+-]*/)) throw new GradleException('compatVersion必须是安全文件名与Java版本文本')
+def uilibVersion = providers.gradleProperty('uilibVersion').getOrElse('5.0.0-local.selection-20261021.1')
+def hostVersion = providers.gradleProperty('uilibHostVersion').getOrElse(uilibVersion)
+def uilibRepository = providers.gradleProperty('uilibRepository').getOrElse(rootProject.file('../../build/maven').toURI().toString())
+repositories {
+    mavenCentral { content { includeGroup 'org.lwjgl'; includeGroup 'org.lwjgl.lwjgl'; includeGroup 'org.joml'; includeGroup 'com.ibm.icu'; includeGroup 'org.ow2.asm' } }
+    maven { url = uri(uilibRepository) }
+    maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
+    maven { url = 'https://maven.minecraftforge.net'; metadataSources { mavenPom(); artifact() } }
+    maven { url = 'https://repo.spongepowered.org/maven' }
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+    mavenCentral()
+}
+configurations { hostInterface; coreInterface; platformInterface; lwjgl3Binding; rfbApi; nativeInputHost }
+configurations.configureEach { transitive = false }
+dependencies {
+    hostInterface "asia.quanhuzeyu.uilib:minecraft-host:$hostVersion:development-java8"
+    coreInterface "asia.quanhuzeyu.uilib:core:$uilibVersion:development-java8"
+    ['gl-renderer','font-adapter','lwjgl2-adapter','lwjgl3-adapter'].each { platformInterface "asia.quanhuzeyu.uilib:$it:$uilibVersion:java8" }
+    lwjgl3Binding "asia.quanhuzeyu.uilib:lwjgl3-adapter:$uilibVersion:java8"
+    compileOnly 'net.minecraftforge:forge:1.7.10-10.13.4.1614-1.7.10:universal'
+    compileOnly 'org.spongepowered:mixin:0.8.5'
+    compileOnly 'io.github.llamalad7:mixinextras-common:0.5.0'
+    rfbApi 'com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches'
+    nativeInputHost 'com.github.GTNewHorizons:lwjgl3ify:3.0.31:dev'
+    compileOnly 'org.ow2.asm:asm-tree:9.9'
+    compileOnly 'org.ow2.asm:asm:9.9'
+    testCompileOnly 'org.lwjgl.lwjgl:lwjgl:2.9.3'
+    testImplementation 'org.joml:joml:1.10.9'
+    testRuntimeOnly 'com.ibm.icu:icu4j:76.1'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-api:2.17.2'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.17.2'
+    testRuntimeOnly 'com.google.guava:guava:17.0'
+    testRuntimeOnly 'org.apache.commons:commons-lang3:3.3.2'
+    ['lwjgl-freetype','lwjgl-harfbuzz'].each { testImplementation "org.lwjgl:$it:3.4.3" }
+    ['lwjgl','lwjgl-freetype','lwjgl-opengl','lwjgl-glfw','lwjgl-sdl'].each { testRuntimeOnly "org.lwjgl:$it:3.4.3:natives-windows" }
+    testImplementation 'org.lwjgl:lwjgl:3.4.3'
+    testImplementation 'org.lwjgl:lwjgl-opengl:3.4.3'
+    testImplementation 'org.lwjgl:lwjgl-glfw:3.4.3'
+    testImplementation 'org.lwjgl:lwjgl-sdl:3.4.3'
+    testImplementation "asia.quanhuzeyu.uilib:core-verification:$uilibVersion"
+    testImplementation "asia.quanhuzeyu.uilib:platform-verification:$uilibVersion"
+}
+sourceSets.main.compileClasspath += configurations.hostInterface + configurations.coreInterface + configurations.platformInterface + configurations.rfbApi
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
+java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+def generatedVersion = layout.buildDirectory.dir('generated/version')
+tasks.register('generateCompatVersion') {
+    inputs.property 'compatVersion', project.version.toString()
+    outputs.dir generatedVersion
+    doLast {
+        def target = new File(generatedVersion.get().asFile, 'club/heiqi/uilib/compat/CompatVersion.java')
+        target.parentFile.mkdirs()
+        target.text = 'package club.heiqi.uilib.compat; public final class CompatVersion { public static final String VERSION = "' + project.version + '"; }'
+    }
+}
+sourceSets.main.java.srcDir generatedVersion
+compileJava.dependsOn 'generateCompatVersion'
+tasks.withType(JavaCompile).configureEach { options.release = 8; options.encoding = 'UTF-8'; options.compilerArgs += ['-proc:none'] }
+def markedBinding = layout.buildDirectory.dir('generated/marked-binding')
+tasks.register('prepareLwjgl3Binding') {
+    inputs.files configurations.lwjgl3Binding
+    outputs.dir markedBinding
+    doLast {
+        new ZipFile(configurations.lwjgl3Binding.singleFile).withCloseable { zip ->
+            def name = 'club/heiqi/uilib/host/client/gl/Lwjgl3GlApi.class'
+            def reader = new org.objectweb.asm.ClassReader(zip.getInputStream(zip.getEntry(name)))
+            def writer = new org.objectweb.asm.ClassWriter(reader, 0)
+            reader.accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9, writer) {
+                @Override void visitEnd() {
+                    writer.visitAnnotation('Lme/eigenraven/lwjgl3ify/api/Lwjgl3Aware;', true).visitEnd()
+                    super.visitEnd()
+                }
+            }, 0)
+            def target = new File(markedBinding.get().asFile, name)
+            target.parentFile.mkdirs(); target.bytes = writer.toByteArray()
+        }
+    }
+}
+jar {
+    dependsOn 'prepareLwjgl3Binding'
+    from markedBinding
+    from({ zipTree(configurations.lwjgl3Binding.singleFile) }) { include 'META-INF/THIRD-PARTY-NOTICES.md' }
+    archiveBaseName = 'qz_uilib_compat'
+    from('LICENSE')
+    manifest { attributes('TweakClass':'org.spongepowered.asm.launch.MixinTweaker','TweakOrder':'0','MixinConfigs':'mixins.qz_uilib_compat.json','FMLCorePluginContainsFMLMod':'true','ForceLoadAsMod':'true') }
+}
+tasks.register('verifyArtifact') {
+    dependsOn jar
+    doLast {
+        new ZipFile(jar.archiveFile.get().asFile).withCloseable { zip ->
+            def binding = 'club/heiqi/uilib/host/client/gl/Lwjgl3GlApi.class'
+            def marker = 'Lme/eigenraven/lwjgl3ify/api/Lwjgl3Aware;'
+            def canonical = { byte[] bytes ->
+                def writer = new org.objectweb.asm.ClassWriter(0)
+                new org.objectweb.asm.ClassReader(bytes).accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9, writer) {
+                    @Override org.objectweb.asm.AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                        return descriptor == marker ? null : super.visitAnnotation(descriptor, visible)
+                    }
+                }, 0)
+                writer.toByteArray()
+            }
+            new ZipFile(configurations.lwjgl3Binding.singleFile).withCloseable { original ->
+                assert Arrays.equals(canonical(zip.getInputStream(zip.getEntry(binding)).bytes), canonical(original.getInputStream(original.getEntry(binding)).bytes)) : 'LWJGL3 binding除标记外发生改写'
+            }
+            def marked = []
+            zip.entries().each { entry ->
+                if (entry.name.endsWith('.class')) {
+                    def data = new DataInputStream(zip.getInputStream(entry))
+                    assert data.readInt() == 0xcafebabe as int
+                    data.readUnsignedShort(); assert data.readUnsignedShort() == 52 : entry.name
+                    assert entry.name.startsWith('club/heiqi/uilib/compat/') || entry.name == 'club/heiqi/uilib/host/client/gl/Lwjgl3GlApi.class' : entry.name
+                    data.close()
+                    def reader = new org.objectweb.asm.ClassReader(zip.getInputStream(entry))
+                    reader.accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                        @Override org.objectweb.asm.AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                            if (descriptor == marker) marked.add(entry.name)
+                            return null
+                        }
+                    }, org.objectweb.asm.ClassReader.SKIP_CODE)
+                }
+            }
+            assert marked == [binding] : 'LWJGL3Aware只能位于独立binding'
+        }
+    }
+}
+def sha = { File file -> MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+tasks.register('installManifest') {
+    dependsOn build
+    doLast {
+        def file = jar.archiveFile.get().asFile
+        def dependencies = [configurations.hostInterface, configurations.coreInterface, configurations.platformInterface].collectMany { configuration ->
+            configuration.resolvedConfiguration.resolvedArtifacts.collect { artifact ->
+                [group:artifact.moduleVersion.id.group,module:artifact.name,version:artifact.moduleVersion.id.version,classifier:artifact.classifier ?: '',source:artifact.file.absolutePath,sha256:sha(artifact.file)]
+            }
+        }
+        def output = layout.buildDirectory.file('install-manifest.json').get().asFile
+        output.parentFile.mkdirs()
+        output.text = JsonOutput.prettyPrint(JsonOutput.toJson([schemaVersion:1,host:'legacy',version:project.version.toString(),files:[[name:file.name,source:file.absolutePath,sha256:sha(file)]],dependencies:dependencies])) + '\n'
+    }
+}
+tasks.register('compatContractScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.CompatContractScenario'
+    if (providers.gradleProperty('compatPrismRoot').isPresent()) {
+        def root = providers.gradleProperty('compatPrismRoot').get()
+        args root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/angelica-2.2.10.jar',
+             root + '/instances/GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1050-GTNH.jar',
+             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar',
+             root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar'
+    }
+}
+tasks.register('angelicaReplayScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.AngelicaReplayScenario'
+}
+tasks.withType(Test).configureEach { failOnNoDiscoveredTests = false }
+['vanillaFontGlScenario':'VanillaFontGlScenario', 'glyphPipelineScenario':'GlyphPipelineScenario'].each { name, type ->
+    tasks.register(name, JavaExec) {
+        dependsOn testClasses
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'club.heiqi.uilib.ui.scene.integration.' + type
+        maxHeapSize = '1024m'
+    }
+}
+tasks.register('nativeSdlTextInputScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = configurations.rfbApi + configurations.nativeInputHost + sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.ui.scene.integration.RfbNativeInputScenario'
+    jvmArgs '-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader'
+    args 'native-only'
+    maxHeapSize = '1024m'
+}
+tasks.register('irisProducerBatchScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.IrisProducerGlScenario'
+    args 'pure-batch'
+}
+tasks.register('sdlTextInputScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = configurations.rfbApi + configurations.nativeInputHost + sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.ui.scene.integration.RfbNativeInputScenario'
+    jvmArgs '-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader'
+    args 'window'
+}
+tasks.register('deviceCheck') { dependsOn 'vanillaFontGlScenario', 'glyphPipelineScenario', 'sdlTextInputScenario' }
+check.dependsOn 'verifyArtifact', 'compatContractScenario', 'angelicaReplayScenario', 'irisProducerBatchScenario', 'nativeSdlTextInputScenario'
+publishing { publications { compat(MavenPublication) { from components.java } } }
