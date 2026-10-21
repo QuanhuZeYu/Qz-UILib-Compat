@@ -27,6 +27,13 @@ public final class IrisProducerGlScenario {
             int width,
             int height)
             throws Exception {
+        for (int dimensions : new int[] {4, 3, 2})
+            run(context, atlas, fbo, width, height, dimensions);
+    }
+
+    private static void run(
+            final FontRenderContext context, final GlGlyphAtlas atlas,
+            int fbo, int width, int height, int dimensions) throws Exception {
         int oldVao = glGetInteger(GL_VERTEX_ARRAY_BINDING),
                 oldVbo = glGetInteger(GL_ARRAY_BUFFER_BINDING),
                 oldProgram = glGetInteger(GL_CURRENT_PROGRAM);
@@ -41,8 +48,20 @@ public final class IrisProducerGlScenario {
                     glDeleteShader(resources[0]);
                     glDeleteShader(resources[1]);
                 }) {
-            String vertex =
-                    "#version 150\nin vec4 position,color,uv0,uv1;in vec3 normal;in vec4 mc_Entity,at_midBlock;out vec4 c;out vec2 uv;out vec3 light;void main(){gl_Position=position;c=color;c.rgb*=vec3(-mc_Entity.x,-mc_Entity.y/2.0,mc_Entity.z*4.0)*(at_midBlock.x+at_midBlock.y+at_midBlock.z)*(8.0/7.0);c.a*=at_midBlock.w/0.75;uv=uv0.xy;light=vec3(uv1.xy/256.0,normal.z*0.25*mc_Entity.w);}";
+            // BSL 的 midUV 声明为 vec4，宿主仍只提供 XY；GL 按标准补 Z=0、W=1。
+            String mid = dimensions == 2 ? "vec4(mc_midTexCoord,0.0,1.0)"
+                    : dimensions == 3 ? "vec4(mc_midTexCoord,1.0)" : "mc_midTexCoord";
+            String vertex = "#version 150\nin vec4 position,color,uv0,uv1;in vec3 normal;"
+                    + "in vec" + dimensions + " mc_midTexCoord;in vec4 at_tangent,mc_Entity,at_midBlock;"
+                    + "uniform vec2 expectedMid;"
+                    + "out vec4 c;out vec2 uv;out vec3 light;void main(){gl_Position=position;c=color;"
+                    + "c.rgb*=vec3(-mc_Entity.x,-mc_Entity.y/2.0,mc_Entity.z*4.0)"
+                    + "*(at_midBlock.x+at_midBlock.y+at_midBlock.z)*(8.0/7.0);c.a*=at_midBlock.w/0.75;"
+                    + "vec4 mid=" + mid + ";c.rgb*=vec3(mid.xy,1.0);"
+                    + "c.a*=float(all(lessThan(abs(mid.xy-expectedMid),vec2(0.0000001)))"
+                    + "&&all(equal(mid.zw,vec2(0.0,1.0)))"
+                    + "&&all(equal(at_tangent,vec4(1.0,0.0,0.0,1.0))));"
+                    + "uv=uv0.xy;light=vec3(uv1.xy/256.0,normal.z*0.25*mc_Entity.w);}";
             String fragment =
                     "#version 150\nuniform sampler2D image;in vec4 c;in vec2 uv;in vec3 light;out vec4 result;void main(){result=texture(image,uv)*c;result.rgb*=light;}";
             int vs = resources[0] = shader(GL_VERTEX_SHADER, vertex),
@@ -52,6 +71,10 @@ public final class IrisProducerGlScenario {
             glAttachShader(program, fs);
             String[] names = {"position", "color", "uv0", "uv1", "normal"};
             for (int i = 0; i < names.length; i++) glBindAttribLocation(program, i, names[i]);
+            glBindAttribLocation(program, 11, "mc_Entity");
+            glBindAttribLocation(program, 12, "mc_midTexCoord");
+            glBindAttribLocation(program, 13, "at_tangent");
+            glBindAttribLocation(program, 14, "at_midBlock");
             glBindFragDataLocation(program, 0, "result");
             glLinkProgram(program);
             if (glGetProgrami(program, GL_LINK_STATUS) == 0)
@@ -67,6 +90,14 @@ public final class IrisProducerGlScenario {
                                 glGetAttribLocation(program, name),
                                 type.get(0),
                                 size.get(0)));
+            }
+            String[] required = {"position", "color", "uv0", "uv1", "normal",
+                    "mc_midTexCoord", "at_tangent", "mc_Entity", "at_midBlock"};
+            if (attributes.size() != required.length) throw new AssertionError("真实program未保留完整输入布局");
+            for (String name : required) {
+                boolean found = false;
+                for (GlProgramAttribute attribute : attributes) found |= name.equals(attribute.name);
+                if (!found) throw new AssertionError("真实program缺少输入：" + name);
             }
             final int activeProgram = program;
             GlProgramScope delegate =
@@ -165,6 +196,9 @@ public final class IrisProducerGlScenario {
                 glBlendFuncSeparate(
                         GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
                 glBlendEquation(GL_FUNC_ADD);
+                glUseProgram(program);
+                glUniform2f(glGetUniformLocation(program, "expectedMid"),
+                        (white.u0 + white.u1) * 0.5f, (white.v0 + white.v1) * 0.5f);
                 producer.configure(delegate);
                 OrderedQuadCollector collector =
                         new OrderedQuadCollector(
@@ -193,8 +227,8 @@ public final class IrisProducerGlScenario {
                     glReadPixels(width / 2, height / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
                     double alpha = 128.0 / 255 * context.state.color()[3];
                     double[] expected = {
-                        255 * (240.0 / 256) * alpha,
-                        128 * (128.0 / 256) * alpha,
+                        255 * (240.0 / 256) * alpha * (white.u0 + white.u1) * 0.5,
+                        128 * (128.0 / 256) * alpha * (white.v0 + white.v1) * 0.5,
                         64 * 0.25 * alpha,
                         255 * alpha
                     };
@@ -212,7 +246,8 @@ public final class IrisProducerGlScenario {
                 }
                 if (glGetError() != GL_NO_ERROR) throw new AssertionError("Iris producer GL error");
                 System.out.println(
-                        "IRIS_SYNTHETIC_PRODUCER_ABI_PASS productionEmitter=true rawPackedUv1=true straightWhiteSolid=true historicalAlpha=true capturedMcEntityMidBlock=true realIrisEngine=false");
+                        "IRIS_SYNTHETIC_PRODUCER_ABI_PASS productionEmitter=true rawPackedUv1=true straightWhiteSolid=true historicalAlpha=true capturedMcEntityMidBlock=true tangent=true midUvDimensions="
+                                + dimensions + " midUvDefaultZW=true allAttributes=" + attributes.size() + " realIrisEngine=false");
             }
         }
     }

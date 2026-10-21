@@ -51,7 +51,10 @@ final class GlFontProgramLayout {
                 offset = 16;
                 size = 3;
                 normal = true;
-            } else if ("mc_midTexCoord".equals(a.name) && a.type == GL_FLOAT_VEC2) {
+            } else if ("mc_midTexCoord".equals(a.name)
+                    && (a.type == GL_FLOAT_VEC2 || a.type == GL_FLOAT_VEC3 || a.type == GL_FLOAT_VEC4)) {
+                // BSL 声明 vec4，Angelica 非 terrain 输入只提供 XY；指针仍绑定两个分量，
+                // 由 GL 补 Z=0、W=1，不能把后续 tangent 字段当成额外 UV 分量。
                 offset = 19;
                 size = 2;
             } else if ("at_tangent".equals(a.name) && a.type == GL_FLOAT_VEC4) {
