@@ -10,6 +10,8 @@ on:
         description: '发布确认短语：PUBLISH <tag>'
         required: true
         type: string
+env:
+  PYTHONUTF8: '1'
 permissions:
   contents: read
 concurrency:

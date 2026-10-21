@@ -7,6 +7,8 @@ on:
 concurrency:
   group: compat-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+env:
+  PYTHONUTF8: '1'
 permissions:
   contents: read
 jobs:
