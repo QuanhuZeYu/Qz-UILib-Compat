@@ -23,6 +23,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     private final FontHostOrderQueue queue;
     private final ClassLoader loader;
     private final GlApi gl;
+    private final ExternalReplayBoundary replayBoundary;
     private final Method seal, defer, recording, listMode, record, pause, resume;
     private final Field arena, depth, segments, deferred, segmentOwner, from, to;
     private final Class<?> commandType;
@@ -37,6 +38,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         this.gl = gl;
         queue = new FontHostOrderQueue(capacity);
         try {
+            replayBoundary = new ExternalReplayBoundary(DrawState.bind(loader));
             font.getMethod("uilibFontOrderHooksInstalled");
             seal = declared(font, "sealBatchSegment");
             defer = declared(font, "shouldDeferNow");
@@ -162,7 +164,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                     () -> HostProgramSnapshot.replay(program, () -> sink.draw(plan, context)),
                     lease);
             transferred = true;
-            if (!queued) queue.drainTail();
+            if (!queued) replayBoundary.run(queue::drainTail);
         } finally {
             if (!transferred) FontHostOrderQueue.release(lease);
         }
@@ -172,9 +174,11 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         check();
         Object recorder = invoke(pause, null);
         try {
-            FontRenderContext context = sink.capture();
-            sink.registerVisible(plan, context);
-            sink.draw(plan, context);
+            replayBoundary.run(() -> {
+                FontRenderContext context = sink.capture();
+                sink.registerVisible(plan, context);
+                sink.draw(plan, context);
+            });
         } finally {
             // pause未取得recorder表示没有暂停所有权；2.2.28禁止resume(null)跨线程录制。
             if (recorder != null) invoke(resume, null, recorder);
@@ -207,9 +211,10 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             if (replayed.containsKey(match)) return;
             if (!queue.containsOld(match))
                 throw new IllegalStateException("旧font segment未被seal hook登记");
-            queue.beforeOld(match);
+            final Object segment = match;
+            replayBoundary.withinHostFlush(() -> queue.beforeOld(segment));
             replayed.put(match, Boolean.TRUE);
-        } else queue.beforeUnsealedTail();
+        } else replayBoundary.withinHostFlush(queue::beforeUnsealedTail);
     }
 
     private Object find(List<?> list, Object owner, int start, int end) {
@@ -240,7 +245,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             active.check();
             active.flushDepth--;
             if (active.flushDepth == 0) {
-                active.queue.drainTail();
+                active.replayBoundary.run(active.queue::drainTail);
                 active.replayed.clear();
             }
         }

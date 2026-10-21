@@ -15,10 +15,10 @@ public final class AngelicaReplayScenario {
         public static boolean recording() { return true; }
         public static int mode() { return mode; }
         public static void record(Command value) { command = value; }
-        public static Object pause() { return recorder; }
+        public static Object pause() { Object owned = recorder; recorder = null; return owned; }
         public static void resume(Object value) {
             if (value == null) throw new IllegalStateException("Cannot resume another thread display list compilation");
-            resumed = value; resumes++;
+            resumed = value; recorder = value; resumes++;
         }
     }
     private static void set(Object target, String name, Object value) throws Exception {
@@ -33,8 +33,17 @@ public final class AngelicaReplayScenario {
         int[] captures = {0}, draws = {0}, leases = {0}; boolean[] fail = {false};
         FontRenderContext[] last = {null};
         set(bridge, "thread", Thread.currentThread());
+        ExternalReplayScenario.Host host = new ExternalReplayScenario.Host();
+        set(bridge, "replayBoundary", new ExternalReplayBoundary(host));
+        club.heiqi.uilib.host.client.font.compat.FontHostOrderQueue queue =
+                new club.heiqi.uilib.host.client.font.compat.FontHostOrderQueue(4);
+        set(bridge, "queue", queue);
+        Field active = AngelicaBridge.class.getDeclaredField("active"); active.setAccessible(true); active.set(null, bridge);
+        set(bridge, "replayed", new java.util.IdentityHashMap<Object, Boolean>());
+        host.flushed = () -> { AngelicaBridge.beginFlush(); AngelicaBridge.endFlush(); };
         set(bridge, "sink", new OptionalFontHostBridge.ReplaySink() {
             public FontRenderContext capture() {
+                require(!host.pending && Lists.recorder == null, "列表矩阵必须在暂停所属录制器且宿主稳定后捕获");
                 float[] matrix = new float[16]; matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1; matrix[12] = ++captures[0];
                 return new FontRenderContext(new FontProjection(matrix, matrix, new int[] {0,0,800,600}),
                         0, 600, false, 0x0203, false, false, new int[] {0,0,800,600},
@@ -42,6 +51,7 @@ public final class AngelicaReplayScenario {
             }
             public void registerVisible(PaintPlan plan, FontRenderContext context) { require(context != last[0], "回放重用了编译期矩阵"); }
             public void draw(PaintPlan plan, FontRenderContext context) {
+                host.draw(false);
                 last[0] = context; draws[0]++; if (fail[0]) throw new IllegalStateException("draw failure");
             }
         });
@@ -65,9 +75,15 @@ public final class AngelicaReplayScenario {
         Lists.command.delete(); Lists.command.delete(); require(leases[0] == 1, "delete必须仅释放一次源租约");
         try { Lists.command.execute(); throw new AssertionError("delete后仍执行"); } catch (IllegalStateException expected) {}
         fail[0] = false; Lists.mode = 0x1301; int before = draws[0];
+        int[] queuedLeases = {0};
+        queue.submit(() -> { require(Lists.recorder == null, "宿主preflush前未暂停录制器"); host.draw(false); }, () -> queuedLeases[0]++);
+        host.pending = true;
         bridge.submit(plan, last[0], () -> leases[0]++);
         require(draws[0] == before + 1 && Lists.resumes == 2, "COMPILE_AND_EXECUTE应立即执行一次并恢复所属录制器");
+        require(queuedLeases[0] == 1 && queue.pending() == 0 && host.geometry == 1, "生产executeList前置屏障没有完成旧几何与旧ticket");
+        require(host.suspended == 0 && host.preparations == 0, "列表回放泄漏guard或Prepared");
         Lists.command.delete(); require(leases[0] == 2, "第二次录制租约未释放");
+        active.set(null, null);
         System.out.println("ANGELICA_REPLAY_PASS compile/compileAndExecute currentMatrices nullRecorderNoResume ownedRecorderExceptionRestore deleteLeaseExactlyOnce");
     }
 }

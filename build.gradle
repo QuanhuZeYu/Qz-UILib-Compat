@@ -161,6 +161,12 @@ tasks.register('compatContractScenario', JavaExec) {
              root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar'
     }
 }
+tasks.register('externalReplayScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.ExternalReplayScenario'
+}
+check.dependsOn 'externalReplayScenario'
 tasks.register('angelicaReplayScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
