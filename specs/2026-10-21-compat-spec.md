@@ -12,7 +12,7 @@ Angelica 2.2.10 的 pipeline helper 返回 boolean、ctx 包可见；2.2.28 返�
 
 AE2 monitor 的显示列表随字体替代开关及既有 FontTextService 排版代际（同来源候选变更也换代）变化重新生成，防止旧原版字符和 UILib 逻辑命令混存。有 Angelica 时保留逻辑列表；无 Angelica 且替换开启时，仅跳过 glNewList/glEndList 并逐帧执行原 AE2 绘制体，避免把 VAO、uniform 和未来字形录入原生列表；关闭后重建原生列表。不固化 GPU 句柄或镜头矩阵。保持存储、转换、吞吐监控原有业务、数量更新与六向放置。对应缺陷：QuanhuZeYu/Qz-UILib#69。
 
-GTNH 已登记的私用显示字符可映射到其实际标准 Unicode 字符，沿宿主中性 `textMapping()` 快照和共同格式解析完成测量、裁剪、换行与绘制；不修改业务原文、不添加字体资源、候选或字体引擎。映射范围仅为 GregTech `CustomGlyphs`（629e4105）通过 GTNHLib `GlyphReplacements`（d6dbd833）实际登记的二十项；其中 ALEPH 对应 U+05D0。未登记字符保持原值，不按符号名称推测对应字符。
+GTNH 私用显示字符沿宿主中性 `textMapping()` 快照和共同格式解析映射到 Unicode 字符，统一完成测量、裁剪、换行与绘制；不修改业务原文，Compat 不添加字体资源、候选或字体引擎。映射完整覆盖 U+E000—U+E020 的三十三项：原二十项保持 GregTech `CustomGlyphs`（629e4105）通过 GTNHLib `GlyphReplacements`（d6dbd833）实际登记的对应关系，其中 ALEPH 对应 U+05D0；其余十三项采用 issue #53 中用户从对比图选定的相似显示替代。GALAXY 的 U+058D 仅为形似替代；问号使用 U+FE56，不宣称等价下标，不额外缩小或下移；硫黄使用普通炼金硫黄 U+1F70D。范围外字符保持原值。所需字形继续由 Core 的公开随包字体候选及同一 FT/HB 管线提供，不依赖系统字体补齐。
 
 独立配置 `config/qz_uilib_compat.yaml` 使用 Core YAML 配置合同，仅声明布尔项 `gtnh.mapPrivateCharacters`，默认 true，首次启动生成。配置在 preInit 读取；编辑后 F3T 或重启生效。F3T 复用宿主既有资源 owner 通知 `resourcesReloaded()`，在捕获新字体代之前重新读取并发布稳定 ON/OFF 映射实例，后续字体发布沿既有代际使 AE2 等布局缓存失效。不新增页面、监听线程或文件轮询；热路径仅取快照。配置错误明确上抛、不覆盖文件或发布默认值；上次成功快照在错误时保持不变。共同加载入口无 Minecraft 客户端类依赖。
 

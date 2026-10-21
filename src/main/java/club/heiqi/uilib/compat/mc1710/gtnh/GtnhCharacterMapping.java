@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.config.ConfigSchema;
 public final class GtnhCharacterMapping {
     private static final ConfigKey<Boolean> ENABLED =
             new ConfigKey<>("gtnh.mapPrivateCharacters", ConfigCodecs.BOOLEAN, true)
-                    .withComment("将已登记的GTNH私用符号显示为对应Unicode字符；修改后F3T或重启生效。");
+                    .withComment("将GTNH私用符号显示为登记Unicode字符或已选相似符号；修改后F3T或重启生效。");
     private static final ConfigSchema SCHEMA = ConfigSchema.of(ENABLED);
     private static final IntUnaryOperator OFF = cp -> cp;
     private static final IntUnaryOperator ON = GtnhCharacterMapping::mapped;
@@ -45,17 +45,29 @@ public final class GtnhCharacterMapping {
 
     public static IntUnaryOperator snapshot() { return current; }
 
-    /* 对应 GregTech CustomGlyphs（629e4105）的实际 registerCustomGlyph 声明，
-     * 语义由 GTNHLib GlyphReplacements（d6dbd833）登记；仅记录码点对应事实，
-     * 不复制其实现或图片。未登记的私用字符保持原值，不按名称猜测。
-     * ALEPH 明确对应 U+05D0（希伯来字母），不是数学符号 U+2135。
+    /* 原二十项对应 GregTech CustomGlyphs（629e4105）的 registerCustomGlyph 声明，
+     * 由 GTNHLib GlyphReplacements（d6dbd833）登记；ALEPH 对应 U+05D0，不是 U+2135。
+     * 其余十三项是 issue #53 中用户从对比图选定的相似显示替代，不是上游登记关系：
+     * GALAXY 用形似的 U+058D；U+FE56 只替代问号外形，不等价于下标，也不额外缩小/下移。
+     * 硫黄使用普通炼金硫黄 U+1F70D。这里只记录对应事实和已选替代，不复制上游实现或图片。
      */
     private static int mapped(int cp) {
         switch (cp) {
+            case 0xE000: return 0x1F701;
+            case 0xE001: return 0x1F703;
+            case 0xE002: return 0x1F702;
+            case 0xE003: return 0x1F704;
+            case 0xE004: return 0x22C0;
+            case 0xE005: return 0x22C1;
+            case 0xE006: return 0x2742;
             case 0xE007: return 0x26CF;
             case 0xE008: return 0x21F2;
             case 0xE009: return 0x21F1;
             case 0xE00A: return 0x26A1;
+            case 0xE00B: return 0x2738;
+            case 0xE00C: return 0x058D;
+            case 0xE00D: return 0x2728;
+            case 0xE00E: return 0x1F9F2;
             case 0xE00F: return 0x2205;
             case 0xE010: return 0x2070;
             case 0xE011: return 0x00B9;
@@ -71,7 +83,9 @@ public final class GtnhCharacterMapping {
             case 0xE01B: return 0x05D0;
             case 0xE01C: return 0x03C9;
             case 0xE01D: return 0x300C;
+            case 0xE01E: return 0x1F70D;
             case 0xE01F: return 0x2A02;
+            case 0xE020: return 0xFE56;
             default: return cp;
         }
     }
