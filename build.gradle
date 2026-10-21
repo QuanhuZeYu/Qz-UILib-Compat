@@ -38,6 +38,7 @@ dependencies {
     testCompileOnly 'org.lwjgl.lwjgl:lwjgl:2.9.3'
     testImplementation 'org.joml:joml:1.10.9'
     testRuntimeOnly 'com.ibm.icu:icu4j:76.1'
+    testRuntimeOnly 'org.yaml:snakeyaml:2.4'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-api:2.17.2'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.17.2'
     testRuntimeOnly 'com.google.guava:guava:17.0'
@@ -162,6 +163,27 @@ tasks.register('compatContractScenario', JavaExec) {
              root + '/instances/GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar'
     }
 }
+tasks.register('gtnhCharacterMappingScenario', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.gtnh.GtnhCharacterMappingScenario'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(8) }
+    jvmArgs '-Dfile.encoding=UTF-8'
+    maxHeapSize = '1024m'
+    // Java8 Windows不能解析中文绝对classpath，沿宿主同一启动边界转为相对路径。
+    doFirst {
+        if (System.getProperty('os.name').toLowerCase().contains('win')) {
+            def location = workingDir.toPath()
+            def relative = classpath.files.collect { artifact ->
+                def absolute = artifact.toPath().toAbsolutePath()
+                location.root == absolute.root ? location.relativize(absolute).toString() : absolute.toString()
+            }.join(File.pathSeparator)
+            classpath = files()
+            jvmArgs '-cp', relative
+        }
+    }
+}
+check.dependsOn 'gtnhCharacterMappingScenario'
 tasks.register('externalReplayScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath

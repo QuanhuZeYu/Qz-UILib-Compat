@@ -11,6 +11,13 @@ import club.heiqi.uilib.compat.mc1710.lwjgl3ify.sdl.Lwjgl3ifyTextInput;
 
 /** 服务构造不解析目标Mod；只有目标资源和所需ABI已确认才创建专属适配器。 */
 public final class LegacyHostExtension implements MinecraftHostExtension {
+    public java.util.function.IntUnaryOperator textMapping() {
+        return club.heiqi.uilib.compat.mc1710.gtnh.GtnhCharacterMapping.snapshot();
+    }
+    public void resourcesReloaded() {
+        try { club.heiqi.uilib.compat.mc1710.gtnh.GtnhCharacterMapping.reload(); }
+        catch (java.io.IOException failure) { throw new IllegalStateException("GTNH字符映射配置重载失败", failure); }
+    }
     private static boolean present(ClassLoader loader, String type) { return loader.getResource(type.replace('.', '/') + ".class") != null; }
     public OptionalFontHostBridge fontBridge(ClassLoader loader, GlApi gl,
             OptionalFontHostBridge.ReplaySink sink, int capacity) {
