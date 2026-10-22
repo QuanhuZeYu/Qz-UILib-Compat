@@ -42,9 +42,6 @@ const version = option('version');
 const title = option('title');
 const assets = options('asset');
 const changelog = option('changelog');
-const commit = option('commit');
-const runUrl = option('run-url');
-const scope = option('scope');
 
 const tagPattern = /^v?\d+\.\d+\.\d+(?:[.-](alpha|beta|rc)[.-]?\d+)?$/;
 const tagMatch = tagPattern.exec(tag);
@@ -57,22 +54,7 @@ const auth = gh(['auth', 'status']);
 if (auth.status !== 0) fail('GitHub CLI 未认证：' + (auth.stderr || '').trim());
 
 const prerelease = Boolean(tagMatch[1]);
-const tick = String.fromCharCode(96);
-const releaseBody = [
-    readFileSync(changelog, 'utf8').trim(),
-    '',
-    '---',
-    '',
-    '## 构建证据',
-    '',
-    '- tag：' + tick + tag + tick,
-    '- 版本：' + tick + version + tick,
-    '- 提交：' + tick + commit + tick,
-    '- Actions 运行：' + runUrl,
-    '- 构建范围：' + scope,
-    '- 发布资产：' + assets.map(asset => tick + basename(asset) + tick).join('、'),
-    ''
-].join('\n');
+const releaseBody = readFileSync(changelog, 'utf8').trimEnd() + '\n';
 
 const bodyPath = join(tmpdir(), 'qz-uilib-release-' + process.pid + '.md');
 writeFileSync(bodyPath, releaseBody, 'utf8');

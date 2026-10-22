@@ -41,7 +41,7 @@ Windows 可使用 `gradlew.bat`。默认 Maven 目录为本仓 `build/ci/maven`�
 - `build/release/qz-uilib-compat-1.0.0-beta1-maven.zip`
 - `build/release/install-manifest.json`
 
-Release 静态正文固定取 tag 中的更新日志，动态证据包含 tag、commit、Actions 链接与实际构建范围。首次发布先创建草稿，资产上传后公开；重跑替换同名资产、保留其他资产，正文不累加证据段。发布工具回归可独立执行：
+Release 正文只使用静态更新日志。首次发布先创建草稿，资产上传后公开；重跑替换同名资产、保留其他资产，并重新使用同一份静态正文。发布工具回归可独立执行：
 
 ```sh
 python -m unittest discover -s tools -p 'test_*.py'

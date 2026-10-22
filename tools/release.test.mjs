@@ -33,8 +33,7 @@ if (args[1] === 'upload' && process.env.TEST_UPLOAD_FAILURE === 'true') { consol
         run(tag = '1.0.0-beta1', version = '1.0.0-beta1') {
             return spawnSync(process.execPath, [resolve('tools/release.mjs'),
                 '--repo', 'example/compat', '--tag', tag, '--version', version,
-                '--title', 'Compat ' + version, '--asset', asset, '--changelog', changelog,
-                '--commit', 'abcdef', '--run-url', 'https://github.com/example/compat/actions/runs/1', '--scope', '完整 build'], {
+                '--title', 'Compat ' + version, '--asset', asset, '--changelog', changelog], {
                 encoding: 'utf8', env: { ...process.env, QZ_GH_BIN: JSON.stringify([process.execPath, fake]),
                     TEST_TRACE: trace, TEST_STATE: state, TEST_VIEW_FAILURE: String(viewFailure), TEST_UPLOAD_FAILURE: String(uploadFailure) }
             });
@@ -43,7 +42,7 @@ if (args[1] === 'upload' && process.env.TEST_UPLOAD_FAILURE === 'true') { consol
     };
 }
 
-test('beta 先创建草稿、上传后公开，重跑替换同名资产且正文不累加', t => {
+test('beta 先创建草稿、上传后公开，创建和重跑正文只含静态说明', t => {
     const f = fixture(t);
     const first = f.run();
     assert.equal(first.status, 0, first.stderr);
@@ -59,10 +58,8 @@ test('beta 先创建草稿、上传后公开，重跑替换同名资产且正文
     assert.equal(f.run().status, 0);
     calls = f.calls();
     assert.equal(calls.filter(x => x.args[1] === 'create').length, 1);
-    for (const call of calls.filter(x => x.args[1] === 'edit')) {
-        assert.equal(call.body.split('## 构建证据').length, 2);
-        assert.match(call.body, /abcdef/);
-        assert.match(call.body, /actions\/runs\/1/);
+    for (const call of calls.filter(x => x.body !== undefined)) {
+        assert.equal(call.body, '# 静态发布说明\n');
     }
 });
 
@@ -72,6 +69,7 @@ test('稳定 tag 可设为 latest', t => {
     const edit = f.calls().find(x => x.args[1] === 'edit');
     assert.ok(edit.args.includes('--prerelease=false'));
     assert.ok(edit.args.includes('--latest=true'));
+    assert.equal(edit.body, '# 静态发布说明\n');
 });
 
 test('tag 格式和版本不一致在接触远端前失败', t => {
