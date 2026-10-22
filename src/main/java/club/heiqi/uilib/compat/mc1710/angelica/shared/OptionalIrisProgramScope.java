@@ -83,6 +83,11 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
 
     public static OptionalIrisProgramScope open(
             ClassLoader loader, GlApi gl, FontRenderContext context) {
+        return open(loader, gl, context, null);
+    }
+
+    static OptionalIrisProgramScope open(
+            ClassLoader loader, GlApi gl, FontRenderContext context, IrisProgramProvider provider) {
         HostProgramSnapshot source = HostProgramSnapshot.current();
         if (source != null && !source.active) return null;
         final Class<?> iris;
@@ -109,14 +114,16 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
                     throw new IllegalStateException("延期Iris文字回放已离开有效world pass，禁止own shader回退");
                 return null;
             }
-            return new OptionalIrisProgramScope(pipeline, deferred, loader, gl, context);
+            DrawState drawState = provider == null ? DrawState.bind(loader) : provider.drawState();
+            return new OptionalIrisProgramScope(pipeline, deferred, loader, gl, context, drawState);
         } catch (ReflectiveOperationException | LinkageError error) {
             throw new IllegalStateException("Iris world program接口失配，禁止own shader伪兼容", error);
         }
     }
 
     private OptionalIrisProgramScope(
-            Object pipeline, Class<?> type, ClassLoader loader, GlApi gl, FontRenderContext context)
+            Object pipeline, Class<?> type, ClassLoader loader, GlApi gl, FontRenderContext context,
+            DrawState drawState)
             throws ReflectiveOperationException {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         this.pipeline = pipeline;
@@ -141,7 +148,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         oldPhase = getPhase.invoke(pipeline);
         Class<?> glsm =
                 Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-        drawState = DrawState.bind(loader);
+        this.drawState = drawState;
         packedLight = context.state.packedLight;
         normal = context.state.normal();
         lightmapActive = context.state.lightmapActive;
@@ -151,7 +158,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         entityId = source == null ? 0 : source.entityId;
         itemId = source == null ? 0 : source.itemId;
         blockEntityId = context.state.blockEntityId;
-        producer = new ProducerStateScope(loader, gl, context, source);
+        producer = new ProducerStateScope(loader, gl, context, source, drawState);
         try {
             HostProgramSnapshot captured = HostProgramSnapshot.current();
             if (captured != null && captured.active) setPhase.invoke(pipeline, captured.phase);

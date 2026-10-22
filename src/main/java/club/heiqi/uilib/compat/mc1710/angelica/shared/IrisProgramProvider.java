@@ -16,6 +16,7 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 public final class IrisProgramProvider implements GlProgramProvider {
     private final ClassLoader loader;
     private final GlApi gl;
+    private DrawState drawState;
 
     public IrisProgramProvider(ClassLoader loader, GlApi gl) {
         this.loader = Objects.requireNonNull(loader, "loader");
@@ -32,8 +33,15 @@ public final class IrisProgramProvider implements GlProgramProvider {
         return new GlFontIrisProducer(gl, capacity);
     }
 
+    /** ABI只随本provider的ClassLoader变化；每scope仍从绑定方法读取当前GL上下文。
+     * 在有效Iris pass首次使用时绑定，构造/缺席路径不加载可选宿主。 */
+    DrawState drawState() throws ReflectiveOperationException {
+        if (drawState == null) drawState = DrawState.bind(loader);
+        return drawState;
+    }
+
     @Override
     public GlProgramScope open(FontRenderContext context) {
-        return OptionalIrisProgramScope.open(loader, gl, context);
+        return OptionalIrisProgramScope.open(loader, gl, context, this);
     }
 }

@@ -12,6 +12,7 @@ import org.objectweb.asm.tree.*;
  * 生产反射构造器直接绑定这些原始签名，能发现真实ABI迁移，不能代替游戏执行验证。 */
 final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
     private final Map<String, byte[]> classes = new HashMap<>();
+    int fontResourceReads;
     ActualJarHeaders(File file) throws IOException {
         super(ActualJarHeaders.class.getClassLoader());
         try (JarFile jar = new JarFile(file)) {
@@ -28,6 +29,8 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
         }
     }
     @Override public InputStream getResourceAsStream(String name) {
+        if (name.equals("com/gtnewhorizons/angelica/client/font/BatchingFontRenderer.class"))
+            fontResourceReads++;
         byte[] code = classes.get(name.replace('/', '.').replaceFirst("[.]class$", ""));
         return code == null ? super.getResourceAsStream(name) : new ByteArrayInputStream(code);
     }

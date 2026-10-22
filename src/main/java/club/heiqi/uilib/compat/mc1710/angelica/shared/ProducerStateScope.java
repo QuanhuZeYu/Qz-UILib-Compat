@@ -57,7 +57,8 @@ public final class ProducerStateScope implements AutoCloseable {
     private int producerVao;
 
     ProducerStateScope(
-            ClassLoader loader, GlApi gl, FontRenderContext context, HostProgramSnapshot source)
+            ClassLoader loader, GlApi gl, FontRenderContext context, HostProgramSnapshot source,
+            DrawState drawState)
             throws ReflectiveOperationException {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         Class<?> glsm =
@@ -93,7 +94,7 @@ public final class ProducerStateScope implements AutoCloseable {
         Class<?> vaoManager =
                 Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader);
         setFlags = vaoManager.getMethod("setCurrentVertexFlags", int.class);
-        oldFlags = DrawState.bind(loader).vertexFlags();
+        oldFlags = drawState.vertexFlags();
         Class<?> flags =
                 Class.forName(
                         "com.gtnewhorizon.gtnhlib.client.renderer.vertex.VertexFlags",

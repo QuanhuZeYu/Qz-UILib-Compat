@@ -77,6 +77,19 @@ public final class CompatContractScenario {
                         getLoader(), new Class<?>[] {club.heiqi.uilib.host.client.gl.GlApi.class},
                         (proxy, method, values) -> { throw new AssertionError("构造阶段不应访问GL: " + method); });
                 club.heiqi.uilib.compat.mc1710.angelica.shared.AngelicaMatrixStateProvider.optional(headers, gl);
+                int reads = headers.fontResourceReads;
+                club.heiqi.uilib.compat.mc1710.angelica.shared.IrisProgramProvider provider =
+                        new club.heiqi.uilib.compat.mc1710.angelica.shared.IrisProgramProvider(headers, gl);
+                require(headers.fontResourceReads == reads, "provider构造提前探测可选ABI");
+                Method bind = provider.getClass().getDeclaredMethod("drawState");
+                bind.setAccessible(true);
+                Object bound = bind.invoke(provider);
+                int boundReads = headers.fontResourceReads;
+                require(boundReads > reads && bound.getClass().getSimpleName().equals(
+                        expected.equals("v2210") ? "DrawState2210" : "DrawState2228"), "真实ABI绑定错误");
+                for (int i = 0; i < 100; i++) require(bind.invoke(provider) == bound, "provider重复绑定ABI");
+                require(headers.fontResourceReads == boundReads, "稳定Iris适配器重复解析class资源");
+                System.out.println("IRIS_BINDING_REUSE_PASS " + expected + " repeated=100 resourceReads=0 lazy=true");
                 System.out.println("ACTUAL_REFLECTION_BIND_PASS " + expected + " matrixProvider/lightmap/draw/uniform/VAO actualMemberHeaders=true gameStaticInit=false");
             }
             System.out.println("ACTUAL_ABI_PASS " + expected + " ctxPublic=" + publicContext + " AE2originalBody=1 new/end/call=1 targetLoads=0");
