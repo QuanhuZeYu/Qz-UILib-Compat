@@ -46,7 +46,7 @@ public abstract class AngelicaFontOrderMixin {
         original.call(commands, from, to, owner);
     }
 
-    // Angelica 2.2.28 的管线helper返回void；沿MC渲染规格第3.2节复用相同保序桥。
+    // 2.2.10 管线返回值继续交给宿主，仅在回放前消费对应文字票据。
     @WrapOperation(
             method = {"flushDeferredThroughPipeline()V", "flushBatchThroughPipeline()V"},
             at =

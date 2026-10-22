@@ -141,11 +141,11 @@ public final class ProducerStateScope implements AutoCloseable {
                 call(activeTexture, oldActiveTexture);
             }
             call(matrixMode, oldMode);
-        } catch (RuntimeException error) {
+        } catch (RuntimeException | Error error) {
             try {
                 close();
-            } catch (RuntimeException cleanup) {
-                error.addSuppressed(cleanup);
+            } catch (RuntimeException | Error cleanup) {
+                cleanupFailure(error, cleanup);
             }
             throw error;
         }
@@ -273,34 +273,70 @@ public final class ProducerStateScope implements AutoCloseable {
         else pointer(a.location, a.size, a.type, a.normalized, a.stride, a.offset);
     }
 
+    private static Throwable cleanupFailure(Throwable failure, Throwable error) {
+        if (failure == null) return error;
+        if (failure != error) failure.addSuppressed(error);
+        return failure;
+    }
+
+    private Throwable restoreMatrix(Throwable failure, int mode, float[] value) {
+        try {
+            matrix(mode, value);
+        } catch (RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        return failure;
+    }
+
+    private static Throwable restoreCall(
+            Throwable failure, Method method, Object target, Object... arguments) {
+        try {
+            callOn(method, target, arguments);
+        } catch (RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        return failure;
+    }
+
     @Override
     public void close() {
         if (closed) return;
         closed = true;
-        matrix(GlTokens.GL_PROJECTION, oldProjection);
-        matrix(GlTokens.GL_MODELVIEW, oldModelView);
-        call(activeTexture, GlTokens.GL_TEXTURE1);
-        gl.glActiveTexture(GlTokens.GL_TEXTURE1);
-        matrix(GlTokens.GL_TEXTURE, oldLightmapMatrix);
-        call(bindTexture, GlTokens.GL_TEXTURE_2D, effectiveTexture1);
-        gl.glBindTexture(GlTokens.GL_TEXTURE_2D, actualTexture1);
-        call(activeTexture, GlTokens.GL_TEXTURE0);
-        gl.glActiveTexture(GlTokens.GL_TEXTURE0);
-        call(bindTexture, GlTokens.GL_TEXTURE_2D, effectiveTexture0);
-        gl.glBindTexture(GlTokens.GL_TEXTURE_2D, actualTexture0);
-        call(activeTexture, oldActiveTexture);
-        gl.glActiveTexture(actualActiveTexture);
-        call(matrixMode, oldMode);
-        call(normalSetter, oldNormal[0], oldNormal[1], oldNormal[2]);
-        call(color, oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
-        callOn(entitySetter, captured, oldEntity, oldItem);
-        callOn(blockSetter, captured, oldBlock);
-        call(bindVao, effectiveVao);
-        call(setFlags, oldFlags);
-        call(bindBuffer, GlTokens.GL_ARRAY_BUFFER, effectiveVbo);
-        call(bindBuffer, GlTokens.GL_ELEMENT_ARRAY_BUFFER, effectiveEbo);
-        gl.glBindVertexArray(actualVao);
-        gl.glBindBuffer(GlTokens.GL_ARRAY_BUFFER, actualVbo);
-        gl.glBindBuffer(GlTokens.GL_ELEMENT_ARRAY_BUFFER, actualEbo);
+        // effective缓存只能在此恢复；单项失败仍须归还其余状态，保留首错与后续清理错误。
+        Throwable failure = restoreMatrix(null, GlTokens.GL_PROJECTION, oldProjection);
+        failure = restoreMatrix(failure, GlTokens.GL_MODELVIEW, oldModelView);
+        failure = restoreCall(failure, activeTexture, null, GlTokens.GL_TEXTURE1);
+        try { gl.glActiveTexture(GlTokens.GL_TEXTURE1); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        failure = restoreMatrix(failure, GlTokens.GL_TEXTURE, oldLightmapMatrix);
+        failure = restoreCall(failure, bindTexture, null, GlTokens.GL_TEXTURE_2D, effectiveTexture1);
+        try { gl.glBindTexture(GlTokens.GL_TEXTURE_2D, actualTexture1); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        failure = restoreCall(failure, activeTexture, null, GlTokens.GL_TEXTURE0);
+        try { gl.glActiveTexture(GlTokens.GL_TEXTURE0); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        failure = restoreCall(failure, bindTexture, null, GlTokens.GL_TEXTURE_2D, effectiveTexture0);
+        try { gl.glBindTexture(GlTokens.GL_TEXTURE_2D, actualTexture0); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        failure = restoreCall(failure, activeTexture, null, oldActiveTexture);
+        try { gl.glActiveTexture(actualActiveTexture); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        failure = restoreCall(failure, matrixMode, null, oldMode);
+        failure = restoreCall(failure, normalSetter, null, oldNormal[0], oldNormal[1], oldNormal[2]);
+        failure = restoreCall(failure, color, null, oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
+        failure = restoreCall(failure, entitySetter, captured, oldEntity, oldItem);
+        failure = restoreCall(failure, blockSetter, captured, oldBlock);
+        failure = restoreCall(failure, bindVao, null, effectiveVao);
+        failure = restoreCall(failure, setFlags, null, oldFlags);
+        failure = restoreCall(failure, bindBuffer, null, GlTokens.GL_ARRAY_BUFFER, effectiveVbo);
+        failure = restoreCall(failure, bindBuffer, null, GlTokens.GL_ELEMENT_ARRAY_BUFFER, effectiveEbo);
+        try { gl.glBindVertexArray(actualVao); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        try { gl.glBindBuffer(GlTokens.GL_ARRAY_BUFFER, actualVbo); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        try { gl.glBindBuffer(GlTokens.GL_ELEMENT_ARRAY_BUFFER, actualEbo); }
+        catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
     }
 }

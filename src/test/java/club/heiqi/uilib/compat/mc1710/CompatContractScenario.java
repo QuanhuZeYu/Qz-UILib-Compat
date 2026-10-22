@@ -42,7 +42,8 @@ public final class CompatContractScenario {
         public static void matrixBooleans(int name, ByteBuffer out) {
             matrixBuffer(name, out); for (int i = 0; i < out.limit(); i++) out.put(i, (byte) (matrixEnabledValue ? 1 : 0));
         }
-        public static void matrixFloats(int name, FloatBuffer out) {
+        public static void matrixFloats(int name, FloatBuffer out) throws Throwable {
+            if (matrixFailure != null) throw matrixFailure;
             matrixBuffer(name, out); for (int i = 0; i < out.limit(); i++) out.put(i, matrixFloatValue);
         }
         public static boolean overrideShaders() { fullSources++; return false; }
@@ -180,14 +181,25 @@ public final class CompatContractScenario {
                 catch (IllegalArgumentException failure) { require(failure.getMessage().equals("有效状态buffer越界"), "count异常合同变化"); }
             }
             require(Projection.matrixCalls == calls, "无效count仍进入外部查询");
-            for (Throwable sentinel : new Throwable[] {new IOException("checked标记"), new IllegalStateException("runtime标记"), new AssertionError("Error标记")}) {
+            for (Throwable sentinel : new Throwable[] {new IOException("checked标记"), new IllegalStateException("runtime标记"), new AssertionError("Error标记"), new LinkageError("linkage标记")}) {
                 Projection.matrixFailure = sentinel;
-                try { provider.integer(0x0D33); throw new AssertionError("未上抛目标错误"); }
-                catch (IllegalStateException failure) {
-                    require(failure.getMessage().equals("Angelica有效光栅状态读取失败；未降级driver")
-                            && failure.getCause() instanceof InvocationTargetException
-                            && failure.getCause().getCause() == sentinel, "目标异常/Error cause合同变化");
-                } finally { Projection.matrixFailure = null; }
+                Throwable observed = null;
+                try { provider.integer(0x0D33); }
+                catch (Throwable failure) { observed = failure; }
+                finally { Projection.matrixFailure = null; }
+                require(sentinel instanceof RuntimeException || sentinel instanceof Error
+                                ? observed == sentinel
+                                : observed instanceof IllegalStateException && observed.getCause() == sentinel,
+                        "查询失败未保留原始原因");
+                Projection.matrixFailure = sentinel;
+                observed = null;
+                try { provider.capture(); }
+                catch (Throwable failure) { observed = failure; }
+                finally { Projection.matrixFailure = null; }
+                require(sentinel instanceof RuntimeException || sentinel instanceof Error
+                                ? observed == sentinel
+                                : observed instanceof IllegalStateException && observed.getCause() == sentinel,
+                        "完整状态捕获失败未保留原始原因");
             }
         } finally { Projection.matrixStencil = Projection.matrixPolygon = null; }
         try (ActualJarHeaders headers = new ActualJarHeaders(new File(angelica))) {

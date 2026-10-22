@@ -167,17 +167,13 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             for (Attribute a : attributes)
                 exposed.add(new GlProgramAttribute(a.name, a.location, a.type, a.size));
             programAttributes = Collections.unmodifiableList(exposed);
-        } catch (ReflectiveOperationException | RuntimeException error) {
+        } catch (ReflectiveOperationException | RuntimeException | Error error) {
             try {
                 producer.close();
-            } catch (RuntimeException cleanup) {
-                error.addSuppressed(cleanup);
+            } catch (RuntimeException | Error cleanup) {
+                cleanupFailure(error, cleanup);
             }
-            try {
-                restore();
-            } catch (ReflectiveOperationException restoreFailure) {
-                error.addSuppressed(restoreFailure);
-            }
+            restore(error);
             throw error;
         }
     }
@@ -296,31 +292,50 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         }
     }
 
-    private void restore() throws ReflectiveOperationException {
-        setPhase.invoke(pipeline, oldPhase);
-        setTranslucency.invoke(pipeline, oldTranslucency);
-        setInputs.invoke(pipeline, oldInputs);
-        rebind.invoke(pipeline);
+    private static Throwable cleanupFailure(Throwable failure, Throwable error) {
+        if (error instanceof ReflectiveOperationException)
+            error = new IllegalStateException("Iris pass scope恢复失败", error);
+        if (failure == null) return error;
+        if (failure != error) failure.addSuppressed(error);
+        return failure;
+    }
+
+    private Throwable restore(Throwable failure) {
+        // pass各项均归此scope归还；某个setter失败也不能略过余项或最后的rebind。
+        try { setPhase.invoke(pipeline, oldPhase); }
+        catch (ReflectiveOperationException | RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        try { setTranslucency.invoke(pipeline, oldTranslucency); }
+        catch (ReflectiveOperationException | RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        try { setInputs.invoke(pipeline, oldInputs); }
+        catch (ReflectiveOperationException | RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        try { rebind.invoke(pipeline); }
+        catch (ReflectiveOperationException | RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
+        }
+        return failure;
     }
 
     @Override
     public void close() {
-        if (!closed) {
-            closed = true;
-            try {
-                producer.close();
-            } finally {
-                try {
-                    restore();
-                    int restored =
-                            ((Number)
-                                            getProgram.invoke(pipeline))
-                                    .intValue();
-                    if (restored > 0) drawState.refreshUniforms(restored);
-                } catch (ReflectiveOperationException error) {
-                    throw new IllegalStateException("Iris pass scope恢复失败", error);
-                }
-            }
+        if (closed) return;
+        closed = true;
+        Throwable failure = null;
+        try { producer.close(); }
+        catch (RuntimeException | Error error) { failure = error; }
+        failure = restore(failure);
+        try {
+            int restored = ((Number) getProgram.invoke(pipeline)).intValue();
+            if (restored > 0) drawState.refreshUniforms(restored);
+        } catch (ReflectiveOperationException | RuntimeException | Error error) {
+            failure = cleanupFailure(failure, error);
         }
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
     }
 }

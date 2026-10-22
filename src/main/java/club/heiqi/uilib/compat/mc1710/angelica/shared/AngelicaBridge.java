@@ -13,7 +13,7 @@ import java.util.Objects;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** Angelica 2.2.10版本锁定接缝（源码61b5301f）；无MC wrapper、无旧font度量。
+/** Angelica 已验证 ABI 的有序文字接缝；不依赖旧 font 度量。
  * optional mixin marker必须实际安装；priority不是安装证明。跨线程/错ABI直接诊断。
  * ReplaySink负责Iris兼容producer与effective状态guard；不得以UIshader伪装shaderpack支持。 */
 public final class AngelicaBridge implements OptionalFontHostBridge {

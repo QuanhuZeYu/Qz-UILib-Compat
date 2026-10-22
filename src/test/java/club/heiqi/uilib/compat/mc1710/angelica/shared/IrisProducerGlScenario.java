@@ -2,7 +2,9 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 import club.heiqi.uilib.host.client.gl.*;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.*;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
+import java.nio.FloatBuffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
@@ -349,10 +351,151 @@ public final class IrisProducerGlScenario {
         }
     }
 
-    public static void main(String[] args) {
+    /** 只替换GLSM/pass端点，执行生产close；不初始化游戏或增加生产测试入口。 */
+    public static final class CleanupHost implements DrawState {
+        static CleanupHost current;
+        final List<String> calls = new ArrayList<>();
+        RuntimeException phaseFailure;
+        Error refreshFailure;
+        public static void matrixMode(int mode) { current.calls.add("matrixMode"); }
+        public static void loadMatrix(FloatBuffer matrix) { current.calls.add("loadMatrix"); }
+        public static void activeTexture(int unit) { current.calls.add("activeTexture"); }
+        public static void bindTexture(int target, int texture) { current.calls.add("bindTexture"); }
+        public static void normal(float x, float y, float z) { current.calls.add("normal"); }
+        public static void color(float r, float g, float b, float a) { current.calls.add("color"); }
+        public static void entity(int entity, int item) { current.calls.add("entity"); }
+        public static void block(int block) { current.calls.add("block"); }
+        public static void vao(int vao) { current.calls.add("vao"); }
+        public static void flags(int flags) { current.calls.add("flags"); }
+        public static void buffer(int target, int buffer) { current.calls.add("buffer"); }
+        public void phase(Object phase) {
+            calls.add("phase");
+            if (phaseFailure != null) throw phaseFailure;
+        }
+        public void translucency(Object value) { calls.add("translucency"); }
+        public void inputs(Object value) { calls.add("inputs"); }
+        public void rebind() { calls.add("rebind"); }
+        public int program() { calls.add("program"); return 7; }
+        public void refreshUniforms(int program) {
+            calls.add("refresh");
+            if (refreshFailure != null) throw refreshFailure;
+        }
+        public void beforeDraw(int mode) { throw new AssertionError("close不应draw"); }
+        public void stabilizeHost() { throw new AssertionError("close不应flush"); }
+        public void suspendHost() { throw new AssertionError("close不应suspend"); }
+        public void resumeHost() { throw new AssertionError("close不应resume"); }
+        public int vertexFlags() { throw new AssertionError("close不应重捕flags"); }
+    }
+
+    private static Object uninitialized(Class<?> type) throws Exception {
+        Class<?> unsafe = Class.forName("sun.misc.Unsafe");
+        Field field = unsafe.getDeclaredField("theUnsafe"); field.setAccessible(true);
+        return unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), type);
+    }
+
+    private static void put(Object owner, String name, Object value) throws Exception {
+        Field field = owner.getClass().getDeclaredField(name);
+        field.setAccessible(true); field.set(owner, value);
+    }
+
+    private static ProducerStateScope cleanupProducer(CleanupHost host, Throwable first, Throwable second)
+            throws Exception {
+        ProducerStateScope producer = (ProducerStateScope) uninitialized(ProducerStateScope.class);
+        GlApi api = (GlApi) Proxy.newProxyInstance(GlApi.class.getClassLoader(), new Class<?>[] {GlApi.class},
+                (proxy, method, arguments) -> {
+                    String name = method.getName(); host.calls.add(name);
+                    if (name.equals("glActiveTexture") && (Integer) arguments[0] == GL_TEXTURE1)
+                        throw first;
+                    if (name.equals("glBindTexture") && (Integer) arguments[1] == 13 && second != null)
+                        throw second;
+                    return null;
+                });
+        put(producer, "gl", api);
+        // 保持GLSM static端点形态，method.invoke仍走生产边界。
+        CleanupHost.current = host;
+        put(producer, "captured", host);
+        put(producer, "oldProjection", new float[16]);
+        put(producer, "oldModelView", new float[16]);
+        put(producer, "oldLightmapMatrix", new float[16]);
+        put(producer, "oldNormal", new float[3]); put(producer, "oldColor", new float[4]);
+        put(producer, "actualTexture1", 13); put(producer, "oldActiveTexture", GL_TEXTURE0);
+        put(producer, "actualActiveTexture", GL_TEXTURE0);
+        put(producer, "matrixMode", CleanupHost.class.getMethod("matrixMode", int.class));
+        put(producer, "loadMatrix", CleanupHost.class.getMethod("loadMatrix", FloatBuffer.class));
+        put(producer, "activeTexture", CleanupHost.class.getMethod("activeTexture", int.class));
+        put(producer, "bindTexture", CleanupHost.class.getMethod("bindTexture", int.class, int.class));
+        put(producer, "normalSetter", CleanupHost.class.getMethod("normal", float.class, float.class, float.class));
+        put(producer, "color", CleanupHost.class.getMethod("color", float.class, float.class, float.class, float.class));
+        put(producer, "entitySetter", CleanupHost.class.getMethod("entity", int.class, int.class));
+        put(producer, "blockSetter", CleanupHost.class.getMethod("block", int.class));
+        put(producer, "bindVao", CleanupHost.class.getMethod("vao", int.class));
+        put(producer, "setFlags", CleanupHost.class.getMethod("flags", int.class));
+        put(producer, "bindBuffer", CleanupHost.class.getMethod("buffer", int.class, int.class));
+        return producer;
+    }
+
+    private static boolean causedBy(Throwable error, Throwable cause) {
+        for (Throwable current = error; current != null; current = current.getCause())
+            if (current == cause) return true;
+        return false;
+    }
+
+    private static void cleanupScopes() throws Exception {
+        RuntimeException first = new IllegalStateException("producer首错");
+        Error second = new AssertionError("producer后错");
+        CleanupHost host = new CleanupHost();
+        ProducerStateScope producer = cleanupProducer(host, first, second);
+        try { producer.close(); throw new AssertionError("producer吞掉清理错误"); }
+        catch (RuntimeException error) {
+            if (error != first || !java.util.Arrays.equals(error.getSuppressed(), new Throwable[] {second}))
+                throw new AssertionError("producer未保留首错与后错", error);
+        }
+        if (java.util.Collections.frequency(host.calls, "loadMatrix") != 3
+                || !host.calls.containsAll(java.util.Arrays.asList("normal", "color", "entity", "block", "flags"))
+                || java.util.Collections.frequency(host.calls, "buffer") != 2
+                || java.util.Collections.frequency(host.calls, "glBindBuffer") != 2
+                || !host.calls.get(host.calls.size() - 1).equals("glBindBuffer"))
+            throw new AssertionError("producer失败后跳过后续矩阵/实体/VAO恢复: " + host.calls);
+        List<String> completed = new ArrayList<>(host.calls);
+        producer.close();
+        if (!host.calls.equals(completed)) throw new AssertionError("producer重复close再次操作状态");
+
+        host = new CleanupHost();
+        Error initial = new AssertionError("scope首错");
+        host.phaseFailure = new IllegalArgumentException("phase后错");
+        host.refreshFailure = new AssertionError("uniform后错");
+        producer = cleanupProducer(host, initial, null);
+        OptionalIrisProgramScope scope = (OptionalIrisProgramScope) uninitialized(OptionalIrisProgramScope.class);
+        put(scope, "producer", producer); put(scope, "pipeline", host); put(scope, "drawState", host);
+        put(scope, "setPhase", CleanupHost.class.getMethod("phase", Object.class));
+        put(scope, "setTranslucency", CleanupHost.class.getMethod("translucency", Object.class));
+        put(scope, "setInputs", CleanupHost.class.getMethod("inputs", Object.class));
+        put(scope, "rebind", CleanupHost.class.getMethod("rebind"));
+        put(scope, "getProgram", CleanupHost.class.getMethod("program"));
+        try { scope.close(); throw new AssertionError("scope吞掉清理错误"); }
+        catch (Error error) {
+            Throwable[] suppressed = error.getSuppressed();
+            if (error != initial || suppressed.length != 2 || !causedBy(suppressed[0], host.phaseFailure)
+                    || suppressed[1] != host.refreshFailure)
+                throw new AssertionError("scope未保留首错和后续cause", error);
+        }
+        int phase = host.calls.indexOf("phase");
+        if (phase <= host.calls.lastIndexOf("glBindBuffer")
+                || !host.calls.subList(phase, host.calls.size()).equals(java.util.Arrays.asList(
+                        "phase", "translucency", "inputs", "rebind", "program", "refresh")))
+            throw new AssertionError("scope失败后跳过pass恢复或uniform刷新: " + host.calls);
+        completed = new ArrayList<>(host.calls);
+        scope.close();
+        if (!host.calls.equals(completed)) throw new AssertionError("scope重复close再次操作状态");
+        System.out.println("IRIS_SCOPE_CLEANUP_PASS producerDoubleFailure=true passAndUniformAfterFailure=true firstRuntimeErrorPreserved=true closedIdempotent=true shaderExecuted=false");
+    }
+
+    public static void main(String[] args) throws Exception {
         if (args.length != 1 || !args[0].equals("pure-batch"))
             throw new IllegalArgumentException("使用pure-batch运行无GL字节探针");
         pureBatch();
+        try { cleanupScopes(); }
+        finally { CleanupHost.current = null; }
     }
 
     private static int shader(int type, String source) {

@@ -8,7 +8,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -204,11 +203,11 @@ public final class AngelicaMatrixStateProvider
 
     private static MethodHandle bind(Method method, Class<?> result, Class<?>... parameters)
             throws ReflectiveOperationException {
-        return exact(target(MethodHandles.publicLookup().unreflect(method)), result, parameters);
+        return exact(MethodHandles.publicLookup().unreflect(method), result, parameters);
     }
 
     private static MethodHandle constructor(Class<?> type) throws ReflectiveOperationException {
-        return exact(target(MethodHandles.publicLookup().unreflectConstructor(type.getConstructor())), Object.class);
+        return exact(MethodHandles.publicLookup().unreflectConstructor(type.getConstructor()), Object.class);
     }
 
     private static MethodHandle getter(Field field, Class<?> result, Class<?>... parameters)
@@ -216,21 +215,8 @@ public final class AngelicaMatrixStateProvider
         return exact(MethodHandles.publicLookup().unreflectGetter(field), result, parameters);
     }
 
-    private static MethodHandle target(MethodHandle handle) throws ReflectiveOperationException {
-        // Method.invoke/newInstance原本把目标Throwable（包括Error）包为InvocationTargetException。
-        // 在绑定时安装同样的失败边界；成功调用不创建参数数组、包装对象或异常。
-        MethodHandle failure = MethodHandles.lookup().findStatic(AngelicaMatrixStateProvider.class,
-                "targetFailure", MethodType.methodType(Object.class, Throwable.class))
-                .asType(MethodType.methodType(handle.type().returnType(), Throwable.class));
-        return MethodHandles.catchException(handle, Throwable.class, failure);
-    }
-
-    private static Object targetFailure(Throwable error) throws InvocationTargetException {
-        throw new InvocationTargetException(error);
-    }
-
     private static Throwable checkedFailure(Throwable error) {
-        // 目标异常已由句柄包装；provider自身的参数/类型错误及非目标Error保持原有直接传播语义。
+        // 未检查异常原样传播；checked 失败由所属查询补充边界诊断。
         if (error instanceof RuntimeException) throw (RuntimeException) error;
         if (error instanceof Error) throw (Error) error;
         return error;
@@ -289,7 +275,7 @@ public final class AngelicaMatrixStateProvider
                     (int) blockEntity.invokeExact((Object) instance.invokeExact()));
         } catch (Throwable error) {
             throw new IllegalStateException("Angelica有效context捕捉失败；未使用driver假矩阵",
-                    error instanceof LinkageError ? error : checkedFailure(error));
+                    checkedFailure(error));
         }
     }
 
@@ -305,7 +291,7 @@ public final class AngelicaMatrixStateProvider
     @Override
     public int integer(int name) {
         try {
-            // #81 只有back stencil需要选择有效getter；其他枚举直接交给GLSM，避免逐项查询caching。
+            // 仅背面模板状态需要选择有效 getter；其他枚举直接交给 GLSM。
             for (int i = 0; i < BACK_STENCIL_NAMES.length; i++)
                 if (name == BACK_STENCIL_NAMES[i] && (boolean) caching.invokeExact())
                     return (int) backStencilGetters[i].invokeExact((Object) getStencil.invokeExact());
@@ -385,7 +371,7 @@ public final class AngelicaMatrixStateProvider
                 values[i] = (int) blendGetters[i].invokeExact(blend);
             for (int i = 0; i < 4; i++)
                 color[i] = (float) blendGetters[i + 6].invokeExact(blend);
-            // #81 锁定blend由宿主effective快照供给；非blend项仍从同一平台列表捕获一次。
+            // blend 使用宿主有效快照，其余光栅状态沿平台捕获。
             return EffectiveBlendCapture.capture(this, (boolean) effectiveBlendEnabled.invokeExact(),
                     values[0], values[1], values[2], values[3], values[4], values[5], color);
         } catch (Throwable error) {
