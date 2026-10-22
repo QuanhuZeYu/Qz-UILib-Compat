@@ -70,6 +70,8 @@ jobs:
         if: steps.upstreams.outputs.ready == 'true'
         with:
           cache-read-only: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+          # 保留缓存读写，避免收尾另起 runner 全局 Gradle 执行 noop 清理。
+          cache-cleanup: never
       - name: 校验依赖准备和发布工具
         shell: bash
         run: |
