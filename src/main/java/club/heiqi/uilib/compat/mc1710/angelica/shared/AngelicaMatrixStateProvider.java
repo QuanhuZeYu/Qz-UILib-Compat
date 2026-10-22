@@ -235,11 +235,11 @@ public final class AngelicaMatrixStateProvider
     @Override
     public int integer(int name) {
         try {
-            if ((Boolean) caching.invoke(null))
-                for (int i = 0; i < BACK_STENCIL_NAMES.length; i++)
-                    if (name == BACK_STENCIL_NAMES[i])
-                        return ((Number) backStencilGetters[i].invoke(getStencil.invoke(null)))
-                                .intValue();
+            // #81 只有back stencil需要选择有效getter；其他枚举直接交给GLSM，避免逐项反射查询caching。
+            for (int i = 0; i < BACK_STENCIL_NAMES.length; i++)
+                if (name == BACK_STENCIL_NAMES[i] && (Boolean) caching.invoke(null))
+                    return ((Number) backStencilGetters[i].invoke(getStencil.invoke(null)))
+                            .intValue();
             return ((Number) getInteger.invoke(null, name)).intValue();
         } catch (ReflectiveOperationException error) {
             throw failure(error);
