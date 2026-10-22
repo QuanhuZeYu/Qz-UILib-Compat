@@ -13,6 +13,7 @@ import org.objectweb.asm.tree.*;
 final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
     private final Map<String, byte[]> classes = new HashMap<>();
     int fontResourceReads;
+    boolean matrixQueries, boxedIntegerResult;
     private final boolean snapshotFacts;
     ActualJarHeaders(File file) throws IOException { this(file, false); }
     ActualJarHeaders(File file, boolean snapshotFacts) throws IOException {
@@ -66,12 +67,16 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
             for (MethodNode method : node.methods) {
                 if (method.name.equals("<clinit>")) continue;
                 int access = method.access & ~Opcodes.ACC_NATIVE;
+                if (boxedIntegerResult && node.name.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")
+                        && method.name.equals("glGetInteger") && method.desc.equals("(I)I"))
+                    method.desc = "(I)Ljava/lang/Integer;";
                 MethodVisitor body = output.visitMethod(access, method.name, method.desc, null, null);
                 if ((access & Opcodes.ACC_ABSTRACT) == 0) {
                     body.visitCode();
                     if (method.name.equals("<init>")) { body.visitVarInsn(Opcodes.ALOAD, 0); body.visitMethodInsn(Opcodes.INVOKESPECIAL, parent, "<init>", "()V", false); }
                     Type result = Type.getReturnType(method.desc);
-                    if (snapshotFacts && snapshotBody(body, node.name, method, result)) {
+                    if ((snapshotFacts && snapshotBody(body, node.name, method, result))
+                            || (matrixQueries && matrixBody(body, node.name, method, result))) {
                         body.visitMaxs(0, 0); body.visitEnd(); continue;
                     }
                     switch (result.getSort()) {
@@ -111,6 +116,44 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
                 && method.name.equals("shouldOverrideShaders")) {
             body.visitMethodInsn(Opcodes.INVOKESTATIC, projection, "overrideShaders", "()Z", false);
             body.visitInsn(Opcodes.IRETURN); return true;
+        }
+        return false;
+    }
+    /** 只给查询入口供值，执行生产provider与真实descriptor；不模拟GLSM/Iris有效状态算法。 */
+    private boolean matrixBody(MethodVisitor body, String owner, MethodNode method, Type result) {
+        String projection = "club/heiqi/uilib/compat/mc1710/CompatContractScenario$Projection";
+        if (owner.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")) {
+            String query = null;
+            if (method.name.equals("glGetInteger") && method.desc.equals("(I)I")) query = "matrixInteger";
+            if (method.name.equals("glIsEnabled") && method.desc.equals("(I)Z")) query = "matrixEnabled";
+            if (method.name.equals("glGetInteger") && method.desc.equals("(ILjava/nio/IntBuffer;)V")) query = "matrixIntegers";
+            if (method.name.equals("glGetBoolean") && method.desc.equals("(ILjava/nio/ByteBuffer;)V")) query = "matrixBooleans";
+            if (method.name.equals("glGetFloat") && method.desc.equals("(ILjava/nio/FloatBuffer;)V")) query = "matrixFloats";
+            if (query != null) {
+                body.visitVarInsn(Opcodes.ILOAD, 0);
+                if (result.getSort() == Type.VOID) body.visitVarInsn(Opcodes.ALOAD, 1);
+                body.visitMethodInsn(Opcodes.INVOKESTATIC, projection, query, method.desc, false);
+                body.visitInsn(result.getSort() == Type.VOID ? Opcodes.RETURN : Opcodes.IRETURN); return true;
+            }
+            String field = null;
+            if (method.name.equals("isCachingEnabled")) field = "matrixCaching";
+            if (method.name.equals("isEffectiveDepthMaskEnabled")) field = "matrixEnabledValue";
+            if (field != null) {
+                body.visitFieldInsn(Opcodes.GETSTATIC, projection, field, "Z"); body.visitInsn(Opcodes.IRETURN); return true;
+            }
+            if (method.name.equals("getStencilState")) field = "matrixStencil";
+            if (method.name.equals("getPolygonState")) field = "matrixPolygon";
+            if (field != null) {
+                body.visitFieldInsn(Opcodes.GETSTATIC, projection, field, "Ljava/lang/Object;");
+                body.visitTypeInsn(Opcodes.CHECKCAST, result.getInternalName()); body.visitInsn(Opcodes.ARETURN); return true;
+            }
+        }
+        if (owner.equals("com/gtnewhorizons/angelica/glsm/states/StencilState") && method.name.equals("getFuncBack")) {
+            body.visitFieldInsn(Opcodes.GETSTATIC, projection, "matrixIntegerValue", "I"); body.visitInsn(Opcodes.IRETURN); return true;
+        }
+        if (owner.equals("com/gtnewhorizons/angelica/glsm/states/PolygonState")
+                && (method.name.equals("getOffsetFactor") || method.name.equals("getOffsetUnits"))) {
+            body.visitFieldInsn(Opcodes.GETSTATIC, projection, "matrixFloatValue", "F"); body.visitInsn(Opcodes.FRETURN); return true;
         }
         return false;
     }

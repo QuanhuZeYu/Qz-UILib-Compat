@@ -9,6 +9,10 @@ import org.objectweb.asm.tree.*;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import club.heiqi.uilib.compat.mixin.CompatMixinPlugin;
 import club.heiqi.uilib.host.client.extension.MinecraftHostExtension;
+import club.heiqi.uilib.compat.mc1710.angelica.shared.AngelicaMatrixStateProvider;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlTokens;
+import java.nio.*;
 
 /** 实际Jar只读ABI与缺席加载；AE2反例执行生产Mixin方法体，仅替换外部配置投影。 */
 public final class CompatContractScenario {
@@ -17,6 +21,30 @@ public final class CompatContractScenario {
         public static long revision;
         public static Object irisManager, irisPipeline;
         public static int pack, fullSources;
+        public static int matrixName, matrixCalls, matrixIntegerValue;
+        public static float matrixFloatValue;
+        public static boolean matrixEnabledValue, matrixCaching;
+        public static Object matrixStencil, matrixPolygon;
+        public static Throwable matrixFailure;
+        public static int matrixInteger(int name) throws Throwable {
+            matrixName = name; matrixCalls++;
+            if (matrixFailure != null) throw matrixFailure;
+            return matrixIntegerValue;
+        }
+        public static boolean matrixEnabled(int name) { matrixName = name; matrixCalls++; return matrixEnabledValue; }
+        private static void matrixBuffer(int name, Buffer out) {
+            matrixName = name; matrixCalls++;
+            require(out.isDirect() && out.position() == 0 && out.remaining() >= 16, "查询必须使用足够大的direct scratch");
+        }
+        public static void matrixIntegers(int name, IntBuffer out) {
+            matrixBuffer(name, out); for (int i = 0; i < out.limit(); i++) out.put(i, matrixIntegerValue);
+        }
+        public static void matrixBooleans(int name, ByteBuffer out) {
+            matrixBuffer(name, out); for (int i = 0; i < out.limit(); i++) out.put(i, (byte) (matrixEnabledValue ? 1 : 0));
+        }
+        public static void matrixFloats(int name, FloatBuffer out) {
+            matrixBuffer(name, out); for (int i = 0; i < out.limit(); i++) out.put(i, matrixFloatValue);
+        }
         public static boolean overrideShaders() { fullSources++; return false; }
         public static boolean enabled() { return enabled; }
         public static long fontGeneration() { return revision; }
@@ -54,6 +82,7 @@ public final class CompatContractScenario {
             require(expected.equals(AngelicaAbi.select(loader)), "选错实际Angelica ABI");
             actualIrisInputs(angelica, expected);
             snapshotBoundary(angelica, expected);
+            matrixQueries(angelica, expected);
             ClassNode glsm = node(loader, "com.gtnewhorizons.angelica.glsm.GLStateManager");
             MethodNode ctx = method(glsm, "ctx", "()Lcom/gtnewhorizons/angelica/glsm/GLContextState;");
             require(((ctx.access & Opcodes.ACC_PUBLIC) != 0) == publicContext, "ctx可见性证据变化");
@@ -107,6 +136,69 @@ public final class CompatContractScenario {
             }
             System.out.println("ACTUAL_ABI_PASS " + expected + " ctxPublic=" + publicContext + " AE2originalBody=1 new/end/call=1 targetLoads=0");
         }
+    }
+    private static void matrixQueries(String angelica, String expected) throws Exception {
+        GlApi gl = (GlApi) java.lang.reflect.Proxy.newProxyInstance(getLoader(), new Class<?>[] {GlApi.class},
+                (proxy, method, args) -> { throw new AssertionError("查询不应绕过GLSM: " + method); });
+        try (ActualJarHeaders headers = new ActualJarHeaders(new File(angelica))) {
+            headers.matrixQueries = true;
+            AngelicaMatrixStateProvider provider = (AngelicaMatrixStateProvider) AngelicaMatrixStateProvider.optional(headers, gl);
+            Class<?> glsm = headers.loadClass("com.gtnewhorizons.angelica.glsm.GLStateManager");
+            Projection.matrixStencil = uninitialized(glsm.getMethod("getStencilState").getReturnType());
+            Projection.matrixPolygon = uninitialized(glsm.getMethod("getPolygonState").getReturnType());
+            Projection.matrixCalls = 0; Projection.matrixCaching = false;
+            Projection.matrixIntegerValue = 37; Projection.matrixFloatValue = 0.25f; Projection.matrixEnabledValue = true;
+            require(provider.integer(0x0D33) == 37 && Projection.matrixName == 0x0D33, "int参数/返回值错误");
+            require(provider.enabled(GlTokens.GL_BLEND) && Projection.matrixName == GlTokens.GL_BLEND, "boolean参数/返回值错误");
+            require(provider.depthWrite(), "effective depth返回值错误");
+            int[] integers = provider.integers(GlTokens.GL_VIEWPORT, 4);
+            require(Projection.matrixName == GlTokens.GL_VIEWPORT && Arrays.equals(integers, new int[] {37, 37, 37, 37}), "IntBuffer参数/复制错误");
+            boolean[] booleans = provider.booleans(GlTokens.GL_COLOR_WRITEMASK, 4);
+            require(Projection.matrixName == GlTokens.GL_COLOR_WRITEMASK && Arrays.equals(booleans, new boolean[] {true, true, true, true}), "ByteBuffer参数/复制错误");
+            float[] floats = provider.floats(GlTokens.GL_CURRENT_COLOR, 4);
+            require(Projection.matrixName == GlTokens.GL_CURRENT_COLOR && Arrays.equals(floats, new float[] {0.25f, 0.25f, 0.25f, 0.25f}), "FloatBuffer参数/复制错误");
+            Projection.matrixIntegerValue = 71; Projection.matrixFloatValue = 0.5f; Projection.matrixEnabledValue = false;
+            require(provider.integer(0x0D33) == 71 && !provider.enabled(GlTokens.GL_BLEND) && !provider.depthWrite(), "缓存了实际primitive状态值");
+            require(provider.integers(GlTokens.GL_VIEWPORT, 4)[0] == 71
+                    && !provider.booleans(GlTokens.GL_COLOR_WRITEMASK, 4)[0]
+                    && provider.floats(GlTokens.GL_CURRENT_COLOR, 4)[0] == 0.5f, "buffer查询未读取当前状态");
+            require(integers[0] == 37 && booleans[0] && floats[0] == 0.25f, "返回数组被复用scratch覆盖");
+            Projection.matrixCaching = true; int calls = Projection.matrixCalls;
+            require(provider.integer(GlTokens.GL_STENCIL_BACK_FUNC) == 71
+                    && provider.floats(GlTokens.GL_POLYGON_OFFSET_FACTOR, 1)[0] == 0.5f
+                    && provider.floats(GlTokens.GL_POLYGON_OFFSET_UNITS, 1)[0] == 0.5f, "公开state getter精确receiver/primitive返回错误");
+            require(Projection.matrixCalls == calls, "缓存开启特例仍查询driver");
+            Projection.matrixCaching = false;
+            provider.integer(GlTokens.GL_STENCIL_BACK_FUNC); provider.floats(GlTokens.GL_POLYGON_OFFSET_FACTOR, 1);
+            require(Projection.matrixCalls == calls + 2, "缓存关闭特例未交回GLSM fallback");
+            calls = Projection.matrixCalls;
+            for (Runnable invalid : new Runnable[] {
+                    () -> provider.integers(GlTokens.GL_VIEWPORT, -1), () -> provider.integers(GlTokens.GL_VIEWPORT, Integer.MAX_VALUE),
+                    () -> provider.booleans(GlTokens.GL_COLOR_WRITEMASK, -1), () -> provider.booleans(GlTokens.GL_COLOR_WRITEMASK, Integer.MAX_VALUE),
+                    () -> provider.floats(GlTokens.GL_CURRENT_COLOR, -1), () -> provider.floats(GlTokens.GL_CURRENT_COLOR, Integer.MAX_VALUE)}) {
+                try { invalid.run(); throw new AssertionError("未拒绝越界count"); }
+                catch (IllegalArgumentException failure) { require(failure.getMessage().equals("有效状态buffer越界"), "count异常合同变化"); }
+            }
+            require(Projection.matrixCalls == calls, "无效count仍进入外部查询");
+            for (Throwable sentinel : new Throwable[] {new IOException("checked标记"), new IllegalStateException("runtime标记"), new AssertionError("Error标记")}) {
+                Projection.matrixFailure = sentinel;
+                try { provider.integer(0x0D33); throw new AssertionError("未上抛目标错误"); }
+                catch (IllegalStateException failure) {
+                    require(failure.getMessage().equals("Angelica有效光栅状态读取失败；未降级driver")
+                            && failure.getCause() instanceof InvocationTargetException
+                            && failure.getCause().getCause() == sentinel, "目标异常/Error cause合同变化");
+                } finally { Projection.matrixFailure = null; }
+            }
+        } finally { Projection.matrixStencil = Projection.matrixPolygon = null; }
+        try (ActualJarHeaders headers = new ActualJarHeaders(new File(angelica))) {
+            headers.boxedIntegerResult = true;
+            try { AngelicaMatrixStateProvider.optional(headers, gl); throw new AssertionError("接受了boxed primitive ABI"); }
+            catch (IllegalStateException failure) {
+                require(failure.getMessage().equals("Angelica有效状态ABI不匹配")
+                        && failure.getCause() instanceof NoSuchMethodException, "ABI不匹配未在构造时明确失败");
+            }
+        }
+        System.out.println("MATRIX_QUERY_HANDLES_PASS " + expected + " livePrimitive=true buffersCopied=true stateGetters=true cachingFallback=true badCountRejected=true boxedAbiRejected=true targetCausePreserved=true actualDescriptors=true gameStateSimulation=false");
     }
     private static Object uninitialized(Class<?> type) throws Exception {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
