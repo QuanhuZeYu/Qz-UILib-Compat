@@ -1,5 +1,6 @@
 package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
+import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.client.font.compat.*;
 import club.heiqi.uilib.host.client.font.context.*;
 import club.heiqi.uilib.host.client.gl.*;
@@ -131,6 +132,8 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     @Override
     public void submit(PaintPlan plan, FontRenderContext context, AutoCloseable lease) {
         Objects.requireNonNull(lease, "sourceLease");
+        // #81临时探针：提交含早退及租约清理计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_SUBMIT);
         boolean transferred = false;
         try {
             check();
@@ -182,7 +185,19 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             } else {
                 clearFontTail();
                 queue.submit(
-                        () -> HostProgramSnapshot.replay(program, () -> sink.draw(plan, context)),
+                        () -> {
+                            // #81临时探针：独立计划完整回放计时，性能报告定位后统一移除。
+                            long replayToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_REPLAY);
+                            try {
+                                FontPerformanceProbe.count(FontPerformanceProbe.HOST_SINGLE_RUNS, 1);
+                                FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_PLANS, 1);
+                                FontPerformanceProbe.count(
+                                        FontPerformanceProbe.HOST_RUN_COMMANDS, plan.commands().size());
+                                HostProgramSnapshot.replay(program, () -> sink.draw(plan, context));
+                            } finally {
+                                FontPerformanceProbe.end(FontPerformanceProbe.HOST_REPLAY, replayToken);
+                            }
+                        },
                         lease);
                 transferred = true;
             }
@@ -191,7 +206,11 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                 replayBoundary.run(queue::drainTail);
             }
         } finally {
-            if (!transferred) FontHostOrderQueue.release(lease);
+            try {
+                if (!transferred) FontHostOrderQueue.release(lease);
+            } finally {
+                FontPerformanceProbe.end(FontPerformanceProbe.HOST_SUBMIT, probeToken);
+            }
         }
     }
 
@@ -201,9 +220,18 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         Object recorder = invoke(pause, null);
         try {
             replayBoundary.run(() -> {
-                FontRenderContext context = sink.capture();
-                sink.registerVisible(plan, context);
-                sink.draw(plan, context);
+                // #81临时探针：稳定宿主后计列表回放，性能报告定位后统一移除。
+                long replayToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_REPLAY);
+                try {
+                    FontPerformanceProbe.count(FontPerformanceProbe.HOST_SINGLE_RUNS, 1);
+                    FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_PLANS, 1);
+                    FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_COMMANDS, plan.commands().size());
+                    FontRenderContext context = sink.capture();
+                    sink.registerVisible(plan, context);
+                    sink.draw(plan, context);
+                } finally {
+                    FontPerformanceProbe.end(FontPerformanceProbe.HOST_REPLAY, replayToken);
+                }
             });
         } finally {
             // pause未取得recorder表示没有暂停所有权；2.2.28禁止resume(null)跨线程录制。

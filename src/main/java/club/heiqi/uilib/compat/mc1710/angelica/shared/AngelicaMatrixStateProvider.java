@@ -1,5 +1,6 @@
 package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
+import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.client.font.compat.*;
 import club.heiqi.uilib.host.client.font.context.*;
 import club.heiqi.uilib.host.client.gl.*;
@@ -169,6 +170,8 @@ public final class AngelicaMatrixStateProvider
 
     @Override
     public MatrixState capture() {
+        // #81临时探针：有效矩阵采集计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_MATRIX_CAPTURE);
         try {
             float[] p = read(GlTokens.GL_PROJECTION_MATRIX, 16),
                     mv = read(GlTokens.GL_MODELVIEW_MATRIX, 16),
@@ -220,6 +223,8 @@ public final class AngelicaMatrixStateProvider
                     ((Number) blockEntity.invoke(instance.get(null))).intValue());
         } catch (ReflectiveOperationException | LinkageError error) {
             throw new IllegalStateException("Angelica有效context捕捉失败；未使用driver假矩阵", error);
+        } finally {
+            FontPerformanceProbe.end(FontPerformanceProbe.HOST_MATRIX_CAPTURE, probeToken);
         }
     }
 
@@ -310,6 +315,8 @@ public final class AngelicaMatrixStateProvider
 
     @Override
     public FontRenderContext.RasterState rasterState() {
+        // #81临时探针：有效光栅采集计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_RASTER_CAPTURE);
         // front stencil/colorMask/depthRange/viewport/cull走GLSM query缓存；back stencil/offset
         // glGet未覆盖，额外读取公开state getter（caching关闭则仍走GLSM query）。
         // scissor box的宿主setter直接写driver，query真实fallback。Iris锁blend须取readEffective。
@@ -344,6 +351,8 @@ public final class AngelicaMatrixStateProvider
                     raw.polygonOffsetUnits);
         } catch (ReflectiveOperationException error) {
             throw failure(error);
+        } finally {
+            FontPerformanceProbe.end(FontPerformanceProbe.HOST_RASTER_CAPTURE, probeToken);
         }
     }
 

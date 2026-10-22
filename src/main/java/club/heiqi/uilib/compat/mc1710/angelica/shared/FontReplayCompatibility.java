@@ -1,5 +1,6 @@
 package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
+import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.client.font.context.FontProjection;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
@@ -14,22 +15,34 @@ final class FontReplayCompatibility {
 
     static boolean same(FontRenderContext a, FontRenderContext b,
             HostProgramSnapshot sa, HostProgramSnapshot sb) {
-        // legacy上下文缺少完整光栅事实，即使对象相同也不据此合并。
-        if (a == null || b == null || a.rasterState == null || b.rasterState == null) return false;
-        return sameSnapshot(sa, sb)
-                && a.contextIdentity == b.contextIdentity
-                && a.revision == b.revision
-                && a.passKey == b.passKey
-                && a.drawFramebuffer == b.drawFramebuffer
-                && a.sourceFramebufferHeight == b.sourceFramebufferHeight
-                && a.depthTest == b.depthTest
-                && a.depthFunction == b.depthFunction
-                && a.depthWrite == b.depthWrite
-                && a.scissorEnabled == b.scissorEnabled
-                && (a == b || Arrays.equals(a.scissor(), b.scissor())
-                        && sameProjection(a.projection, b.projection)
-                        && sameMatrixState(a.state, b.state)
-                        && sameRasterState(a.rasterState, b.rasterState));
+        // #81临时探针：完整短路比较及早退计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_COMPATIBLE);
+        try {
+            // legacy上下文缺少完整光栅事实，即使对象相同也不据此合并。
+            if (a == null || b == null || a.rasterState == null || b.rasterState == null) {
+                FontPerformanceProbe.count(FontPerformanceProbe.HOST_COMPATIBLE_MISS, 1);
+                return false;
+            }
+            boolean compatible = sameSnapshot(sa, sb)
+                    && a.contextIdentity == b.contextIdentity
+                    && a.revision == b.revision
+                    && a.passKey == b.passKey
+                    && a.drawFramebuffer == b.drawFramebuffer
+                    && a.sourceFramebufferHeight == b.sourceFramebufferHeight
+                    && a.depthTest == b.depthTest
+                    && a.depthFunction == b.depthFunction
+                    && a.depthWrite == b.depthWrite
+                    && a.scissorEnabled == b.scissorEnabled
+                    && (a == b || Arrays.equals(a.scissor(), b.scissor())
+                            && sameProjection(a.projection, b.projection)
+                            && sameMatrixState(a.state, b.state)
+                            && sameRasterState(a.rasterState, b.rasterState));
+            FontPerformanceProbe.count(compatible
+                    ? FontPerformanceProbe.HOST_COMPATIBLE_HIT : FontPerformanceProbe.HOST_COMPATIBLE_MISS, 1);
+            return compatible;
+        } finally {
+            FontPerformanceProbe.end(FontPerformanceProbe.HOST_COMPATIBLE, probeToken);
+        }
     }
 
     private static boolean sameProjection(FontProjection a, FontProjection b) {
