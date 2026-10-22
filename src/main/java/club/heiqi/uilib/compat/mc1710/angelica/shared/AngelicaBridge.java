@@ -160,7 +160,8 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                             || (owner != null && ((Number) read(depth, owner)).intValue() > 0)
                             || !((List<?>) read(deferred, null)).isEmpty();
             HostProgramSnapshot program = snapshots.capture();
-            sink.registerVisible(plan, context);
+            // #81 只有延期票据需在提交时并入本帧需求；即时drain的draw已由prepare准备同一需求。
+            if (queued) sink.registerVisible(plan, context);
             if (queued && FontReplayRun.eligible(plan)) {
                 FontReplayRun tail = fontTail;
                 if (tail != null && tail.accepts(plan, context, program)) {
@@ -204,7 +205,6 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         try {
             replayBoundary.run(() -> {
                 FontRenderContext context = sink.capture();
-                sink.registerVisible(plan, context);
                 sink.draw(plan, context);
             });
         } finally {
