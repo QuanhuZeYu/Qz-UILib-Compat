@@ -84,6 +84,7 @@ public final class AngelicaReplayScenario {
         require(host.suspended == 0 && host.preparations == 0, "列表回放泄漏guard或Prepared");
         Lists.command.delete(); require(leases[0] == 2, "第二次录制租约未释放");
         active.set(null, null);
+        WorldFontBatchScenario.run();
         System.out.println("ANGELICA_REPLAY_PASS compile/compileAndExecute currentMatrices nullRecorderNoResume ownedRecorderExceptionRestore deleteLeaseExactlyOnce");
     }
 }

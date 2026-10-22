@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
  * ReplaySink负责Iris兼容producer与effective状态guard；不得以UIshader伪装shaderpack支持。 */
 public final class AngelicaBridge implements OptionalFontHostBridge {
     private static AngelicaBridge active;
+    private static final Runnable MERGED_TICKET = () -> {};
     private final Thread thread = Thread.currentThread();
     private final ReplaySink sink;
     private final FontHostOrderQueue queue;
@@ -28,6 +29,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     private final Class<?> commandType;
     private int flushDepth;
     private boolean closed, primed;
+    private FontReplayRun fontTail;
     private final IdentityHashMap<Object, Boolean> replayed =
             new IdentityHashMap<Object, Boolean>();
 
@@ -135,6 +137,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             Objects.requireNonNull(plan, "plan");
             Objects.requireNonNull(context, "context");
             if ((Boolean) invoke(recording, null)) {
+                clearFontTail();
                 int mode = ((Number) invoke(listMode, null)).intValue();
                 if (mode != 0x1300 && mode != 0x1301) throw new IllegalStateException("未知显示列表录制模式");
                 DisplayListFontCommand logical = new DisplayListFontCommand(this, plan, lease);
@@ -158,11 +161,35 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                             || !((List<?>) read(deferred, null)).isEmpty();
             HostProgramSnapshot program = snapshots.capture();
             sink.registerVisible(plan, context);
-            queue.submit(
-                    () -> HostProgramSnapshot.replay(program, () -> sink.draw(plan, context)),
-                    lease);
-            transferred = true;
-            if (!queued) replayBoundary.run(queue::drainTail);
+            if (queued && FontReplayRun.eligible(plan)) {
+                FontReplayRun tail = fontTail;
+                if (tail != null && tail.accepts(plan, context, program)) {
+                    FontReplayRun.Addition addition = new FontReplayRun.Addition(plan);
+                    // 每原调用仍占一个sequence/容量并持有独立lease；overflow不能改变旧run。
+                    queue.submit(MERGED_TICKET, lease);
+                    transferred = true;
+                    // submit只入队且不调用回放，同宿主线程下已验证的追加条件在此仍成立。
+                    tail.append(addition);
+                } else {
+                    FontReplayRun run = new FontReplayRun(sink, plan, context, program);
+                    queue.submit(() -> {
+                        clearFontTail();
+                        run.run();
+                    }, lease);
+                    transferred = true;
+                    fontTail = run;
+                }
+            } else {
+                clearFontTail();
+                queue.submit(
+                        () -> HostProgramSnapshot.replay(program, () -> sink.draw(plan, context)),
+                        lease);
+                transferred = true;
+            }
+            if (!queued) {
+                clearFontTail();
+                replayBoundary.run(queue::drainTail);
+            }
         } finally {
             if (!transferred) FontHostOrderQueue.release(lease);
         }
@@ -170,6 +197,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
 
     void executeList(PaintPlan plan) {
         check();
+        clearFontTail();
         Object recorder = invoke(pause, null);
         try {
             replayBoundary.run(() -> {
@@ -196,11 +224,14 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     }
 
     private void register(Object segment, Object owner) {
+        // old segment分配了队列切点，首ticket绝不能合入切点之后的计划。
+        clearFontTail();
         queue.sealed(segment);
     }
 
     private void beforeOld(Object owner, int start, int end) {
         check();
+        clearFontTail();
         if (start == end) return;
         Object match = find((List<?>) read(segments, owner), owner, start, end);
         if (match == null) match = find((List<?>) read(deferred, null), owner, start, end);
@@ -234,6 +265,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     public static void beginFlush() {
         if (active != null) {
             active.check();
+            active.clearFontTail();
             active.flushDepth++;
         }
     }
@@ -243,6 +275,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             active.check();
             active.flushDepth--;
             if (active.flushDepth == 0) {
+                active.clearFontTail();
                 active.replayBoundary.run(active.queue::drainTail);
                 active.replayed.clear();
             }
@@ -258,9 +291,20 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         if (active != null) active.abort();
     }
 
+    private void clearFontTail() {
+        // 普通屏障只封闭合并候选，已入队run仍必须由所属ticket正常绘制。
+        fontTail = null;
+    }
+
+    private void cancelFontTail() {
+        if (fontTail != null) fontTail.cancel();
+        clearFontTail();
+    }
+
     @Override
     public void abort() {
         check();
+        cancelFontTail();
         flushDepth = 0;
         replayed.clear();
         queue.close();
@@ -276,6 +320,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     public void close() {
         if (!closed) {
             check();
+            cancelFontTail();
             try {
                 queue.close();
             } finally {

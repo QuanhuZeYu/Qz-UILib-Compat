@@ -2,6 +2,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlTokens;
+import java.util.Arrays;
 
 /** 固定Angelica 2.2.10非terrain字体的来源generic值副本；没有atlas、VAO或nativebuffer引用。
  * GbufferPrograms.setBlockEntityDefaults实际写attr11=(-1,-1,0,1)、attr14=(0,0,0,0)。
@@ -31,6 +32,12 @@ public final class SourceExtendedAttributes {
         float[] values = new float[4];
         gl.glGetVertexAttribfv(location, GlTokens.GL_CURRENT_VERTEX_ATTRIB, values);
         return values;
+    }
+
+    /** 仅比较已捕获的有限值，不复制数组或读取当前GL。 */
+    boolean sameValues(SourceExtendedAttributes other) {
+        return other != null && Arrays.equals(mcEntity, other.mcEntity)
+                && Arrays.equals(midBlock, other.midBlock);
     }
 
     public float[] mcEntity() {
