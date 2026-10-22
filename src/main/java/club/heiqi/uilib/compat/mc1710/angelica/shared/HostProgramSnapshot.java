@@ -1,6 +1,5 @@
 package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
-import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.font.compat.CompatBuffers;
 import java.lang.reflect.Field;
@@ -113,8 +112,6 @@ final class HostProgramSnapshot {
         }
 
         HostProgramSnapshot capture() {
-            // #81临时探针：来源捕获含异常路径计时，性能报告定位后统一移除。
-            long probeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_PROGRAM_CAPTURE);
             try {
                 bindIdentity();
                 Object pipeline = pipeline();
@@ -142,8 +139,6 @@ final class HostProgramSnapshot {
                 throw new IllegalStateException("Iris存在但必需ABI类缺失", absent);
             } catch (ReflectiveOperationException | LinkageError error) {
                 throw new IllegalStateException("Iris来源snapshot失败", error);
-            } finally {
-                FontPerformanceProbe.end(FontPerformanceProbe.HOST_PROGRAM_CAPTURE, probeToken);
             }
         }
 

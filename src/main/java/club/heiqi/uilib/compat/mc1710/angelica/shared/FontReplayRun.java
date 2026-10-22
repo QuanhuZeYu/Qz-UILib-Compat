@@ -1,6 +1,5 @@
 package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
-import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.client.font.compat.OptionalFontHostBridge.ReplaySink;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -29,19 +28,15 @@ final class FontReplayRun implements Runnable {
     }
 
     static boolean eligible(PaintPlan plan) {
-        // #81临时探针：按原有资格判断调用计数，性能报告定位后统一移除。
         if (plan.commands().isEmpty() || plan.commands().size() > MAX_COMMANDS) {
-            FontPerformanceProbe.count(FontPerformanceProbe.HOST_INELIGIBLE, 1);
             return false;
         }
         for (PaintCommand command : plan.commands())
             if (command.kind != PaintCommand.Kind.TEXT || command.pendingPaint != null
                     || command.failedPaint != null || command.readyOverlay != null
                     || command.branchSource != null) {
-                FontPerformanceProbe.count(FontPerformanceProbe.HOST_INELIGIBLE, 1);
                 return false;
             }
-        FontPerformanceProbe.count(FontPerformanceProbe.HOST_ELIGIBLE, 1);
         return true;
     }
 
@@ -74,39 +69,21 @@ final class FontReplayRun implements Runnable {
 
     @Override
     public void run() {
-        // #81临时探针：完整run含sink.draw后代计时，性能报告定位后统一移除。
-        long replayToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_REPLAY);
-        try {
-            Addition plans = first;
-            if (plans == null) throw new IllegalStateException("font run不能重复回放");
-            // 开始即封闭，异常及回放后的追加同样会被拒绝；局部链只活到本次draw退出。
-            cancel();
-            PaintPlan merged;
-            if (plans.next == null) {
-                FontPerformanceProbe.count(FontPerformanceProbe.HOST_SINGLE_RUNS, 1);
-                FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_PLANS, 1);
-                FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_COMMANDS, plans.commandCount);
-                merged = plans.plan;
-            } else {
-                FontPerformanceProbe.count(FontPerformanceProbe.HOST_MERGED_RUNS, 1);
-                // #81临时探针：仅框定计划拼接构建，不包含sink.draw及其后代。
-                long mergeToken = FontPerformanceProbe.begin(FontPerformanceProbe.HOST_MERGE);
-                try {
-                    PaintPlanBuilder builder = new PaintPlanBuilder();
-                    for (Addition part = plans; part != null; part = part.next) {
-                        FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_PLANS, 1);
-                        FontPerformanceProbe.count(FontPerformanceProbe.HOST_RUN_COMMANDS, part.commandCount);
-                        for (PaintCommand command : part.plan.commands()) builder.add(command);
-                    }
-                    merged = builder.build();
-                } finally {
-                    FontPerformanceProbe.end(FontPerformanceProbe.HOST_MERGE, mergeToken);
-                }
+        Addition plans = first;
+        if (plans == null) throw new IllegalStateException("font run不能重复回放");
+        // 开始即封闭，异常及回放后的追加同样会被拒绝；局部链只活到本次draw退出。
+        cancel();
+        PaintPlan merged;
+        if (plans.next == null) {
+            merged = plans.plan;
+        } else {
+            PaintPlanBuilder builder = new PaintPlanBuilder();
+            for (Addition part = plans; part != null; part = part.next) {
+                for (PaintCommand command : part.plan.commands()) builder.add(command);
             }
-            HostProgramSnapshot.replay(source, () -> sink.draw(merged, context));
-        } finally {
-            FontPerformanceProbe.end(FontPerformanceProbe.HOST_REPLAY, replayToken);
+            merged = builder.build();
         }
+        HostProgramSnapshot.replay(source, () -> sink.draw(merged, context));
     }
 
     /** 只丢弃逻辑载荷；source lease仍唯一归原队列ticket，不在run里释放。 */
