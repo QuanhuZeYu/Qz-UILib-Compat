@@ -322,33 +322,15 @@ public final class AngelicaMatrixStateProvider
         // scissor box的宿主setter直接写driver，query真实fallback。Iris锁blend须取readEffective。
         try {
             Object blend = effectiveBlend.invoke(null, blendConstructor.newInstance());
-            FontRenderContext.RasterState raw = HostRasterCapture.capture(this);
             int[] values = new int[6];
             float[] color = new float[4];
             for (int i = 0; i < 6; i++)
                 values[i] = ((Number) blendGetters[i].invoke(blend)).intValue();
             for (int i = 0; i < 4; i++)
                 color[i] = ((Number) blendGetters[i + 6].invoke(blend)).floatValue();
-            return new FontRenderContext.RasterState(
-                    (Boolean) effectiveBlendEnabled.invoke(null),
-                    values[0],
-                    values[1],
-                    values[2],
-                    values[3],
-                    values[4],
-                    values[5],
-                    color,
-                    raw.stencilEnabled,
-                    raw.frontStencil,
-                    raw.backStencil,
-                    raw.colorMask(),
-                    raw.depthRange(),
-                    raw.cullEnabled,
-                    raw.cullFace,
-                    raw.frontFace,
-                    raw.polygonOffsetFill,
-                    raw.polygonOffsetFactor,
-                    raw.polygonOffsetUnits);
+            // #81 锁定blend由宿主effective快照供给；非blend项仍从同一平台列表捕获一次。
+            return EffectiveBlendCapture.capture(this, (Boolean) effectiveBlendEnabled.invoke(null),
+                    values[0], values[1], values[2], values[3], values[4], values[5], color);
         } catch (ReflectiveOperationException error) {
             throw failure(error);
         } finally {
