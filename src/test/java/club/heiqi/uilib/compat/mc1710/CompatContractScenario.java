@@ -15,6 +15,9 @@ public final class CompatContractScenario {
     public static final class Projection {
         public static boolean enabled;
         public static long revision;
+        public static Object irisManager, irisPipeline;
+        public static int pack, fullSources;
+        public static boolean overrideShaders() { fullSources++; return false; }
         public static boolean enabled() { return enabled; }
         public static long fontGeneration() { return revision; }
     }
@@ -50,6 +53,7 @@ public final class CompatContractScenario {
         try (Resources loader = new Resources(new URL[] {new File(angelica).toURI().toURL(), new File(ae2).toURI().toURL()})) {
             require(expected.equals(AngelicaAbi.select(loader)), "选错实际Angelica ABI");
             actualIrisInputs(angelica, expected);
+            snapshotBoundary(angelica, expected);
             ClassNode glsm = node(loader, "com.gtnewhorizons.angelica.glsm.GLStateManager");
             MethodNode ctx = method(glsm, "ctx", "()Lcom/gtnewhorizons/angelica/glsm/GLContextState;");
             require(((ctx.access & Opcodes.ACC_PUBLIC) != 0) == publicContext, "ctx可见性证据变化");
@@ -89,12 +93,82 @@ public final class CompatContractScenario {
                         expected.equals("v2210") ? "DrawState2210" : "DrawState2228"), "真实ABI绑定错误");
                 for (int i = 0; i < 100; i++) require(bind.invoke(provider) == bound, "provider重复绑定ABI");
                 require(headers.fontResourceReads == boundReads, "稳定Iris适配器重复解析class资源");
-                System.out.println("IRIS_BINDING_REUSE_PASS " + expected + " repeated=100 resourceReads=0 lazy=true");
+                Method queryBinding = provider.getClass().getDeclaredMethod("bindings");
+                queryBinding.setAccessible(true);
+                Object query = queryBinding.invoke(provider);
+                Method worldBinding = query.getClass().getDeclaredMethod("world");
+                worldBinding.setAccessible(true);
+                Object world = worldBinding.invoke(query);
+                require(worldBinding.invoke(query) == world, "稳定world成员重复装配");
+                Field type = world.getClass().getDeclaredField("type"); type.setAccessible(true);
+                require(((Class<?>) type.get(world)).getClassLoader() == headers, "绑定跨ClassLoader串用");
+                System.out.println("IRIS_BINDING_REUSE_PASS " + expected + " repeated=100 resourceReads=0 lazy=true worldBinding=true ownLoader=true");
                 System.out.println("ACTUAL_REFLECTION_BIND_PASS " + expected + " matrixProvider/lightmap/draw/uniform/VAO actualMemberHeaders=true gameStaticInit=false");
             }
             System.out.println("ACTUAL_ABI_PASS " + expected + " ctxPublic=" + publicContext + " AE2originalBody=1 new/end/call=1 targetLoads=0");
         }
     }
+    private static Object uninitialized(Class<?> type) throws Exception {
+        Class<?> unsafe = Class.forName("sun.misc.Unsafe");
+        Field singleton = unsafe.getDeclaredField("theUnsafe"); singleton.setAccessible(true);
+        return unsafe.getMethod("allocateInstance", Class.class).invoke(singleton.get(null), type);
+    }
+    private static void snapshotBoundary(String angelica, String expected) throws Exception {
+        try (ActualJarHeaders headers = new ActualJarHeaders(new File(angelica), true)) {
+            Projection.irisManager = uninitialized(headers.loadClass("net.coderbot.iris.pipeline.PipelineManager"));
+            Class<?> deferred = headers.loadClass("net.coderbot.iris.pipeline.DeferredWorldRenderingPipeline");
+            Object original = Projection.irisPipeline = uninitialized(deferred);
+            Projection.pack = 7; Projection.fullSources = 0;
+            Class<?> snapshot = Class.forName("club.heiqi.uilib.compat.mc1710.angelica.shared.HostProgramSnapshot");
+            Class<?> source = Class.forName(snapshot.getName() + "$Capture");
+            Constructor<?> create = source.getDeclaredConstructor(ClassLoader.class, club.heiqi.uilib.host.client.gl.GlApi.class);
+            create.setAccessible(true);
+            club.heiqi.uilib.host.client.gl.GlApi gl = (club.heiqi.uilib.host.client.gl.GlApi) java.lang.reflect.Proxy.newProxyInstance(
+                    getLoader(), new Class<?>[] {club.heiqi.uilib.host.client.gl.GlApi.class},
+                    (proxy, method, args) -> { throw new AssertionError("失效验证不能重新读取GL来源: " + method); });
+            Object capture = create.newInstance(headers, gl);
+            Method take = source.getDeclaredMethod("capture"); take.setAccessible(true);
+            Method replay = snapshot.getDeclaredMethod("replay", snapshot, Runnable.class); replay.setAccessible(true);
+            Method current = snapshot.getDeclaredMethod("current"); current.setAccessible(true);
+            Object frozen = take.invoke(capture);
+            require(frozen != null && Projection.fullSources == 1, "未读取实际签名的来源事实");
+            int[] draws = {0};
+            Runnable draw = () -> draws[0]++;
+            for (int i = 0; i < 100; i++) replay.invoke(null, frozen, draw);
+            require(draws[0] == 100 && Projection.fullSources == 1, "回放验证重新采集完整来源");
+            Projection.irisPipeline = uninitialized(deferred);
+            rejectSnapshot(replay, frozen, draw);
+            Projection.irisPipeline = original; Projection.pack++;
+            rejectSnapshot(replay, frozen, draw);
+            require(draws[0] == 100, "失效来源仍绘制旧pass");
+            Projection.pack--;
+            RuntimeException sentinel = new RuntimeException("回放异常标记");
+            Runnable nested = () -> {
+                try {
+                    require(current.invoke(null) == frozen, "外层来源未安装");
+                    try {
+                        replay.invoke(null, frozen, (Runnable) () -> { throw sentinel; });
+                        throw new AssertionError("内层回放未执行异常路径");
+                    }
+                    catch (InvocationTargetException failure) { require(failure.getCause() == sentinel, "内层异常被替换"); }
+                    require(current.invoke(null) == frozen, "嵌套异常未恢复外层来源");
+                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+            };
+            replay.invoke(null, frozen, nested);
+            require(current.invoke(null) == null && Projection.fullSources == 1, "回放泄漏来源或重新采集");
+            System.out.println("IRIS_SNAPSHOT_BOUNDARY_PASS " + expected + " replays=100 recapture=0 pipelineReloadRejected=true packReloadRejected=true nestedRestore=true");
+        } finally {
+            Projection.irisManager = Projection.irisPipeline = null;
+        }
+    }
+    private static void rejectSnapshot(Method replay, Object snapshot, Runnable draw) throws Exception {
+        try { replay.invoke(null, snapshot, draw); throw new AssertionError("未拒绝失效来源"); }
+        catch (InvocationTargetException failure) {
+            require(failure.getCause() instanceof IllegalStateException
+                    && failure.getCause().getMessage().contains("pipeline/pack已失效"), "失效诊断变化: " + failure.getCause());
+        }
+    }
+
     /** 直接执行实际 Jar 的输入状态创建；header 替身无法验证枚举工厂与字段值。 */
     private static void actualIrisInputs(String angelica, String expected) throws Exception {
         try (URLClassLoader actual = new URLClassLoader(new URL[] {new File(angelica).toURI().toURL()}, getLoader())) {

@@ -17,6 +17,7 @@ public final class IrisProgramProvider implements GlProgramProvider {
     private final ClassLoader loader;
     private final GlApi gl;
     private DrawState drawState;
+    private IrisReflectionBindings bindings;
 
     public IrisProgramProvider(ClassLoader loader, GlApi gl) {
         this.loader = Objects.requireNonNull(loader, "loader");
@@ -25,7 +26,7 @@ public final class IrisProgramProvider implements GlProgramProvider {
 
     @Override
     public boolean preview(FontRenderContext context) {
-        return OptionalIrisProgramScope.preview(loader, context) != null;
+        return OptionalIrisProgramScope.preview(loader, context, this) != null;
     }
 
     @Override
@@ -38,6 +39,12 @@ public final class IrisProgramProvider implements GlProgramProvider {
     DrawState drawState() throws ReflectiveOperationException {
         if (drawState == null) drawState = DrawState.bind(loader);
         return drawState;
+    }
+
+    /** 只复用成员元数据；pipeline、pass与有效GL值仍由每次调用读取。 */
+    IrisReflectionBindings bindings() throws ReflectiveOperationException {
+        if (bindings == null) bindings = new IrisReflectionBindings(loader);
+        return bindings;
     }
 
     @Override

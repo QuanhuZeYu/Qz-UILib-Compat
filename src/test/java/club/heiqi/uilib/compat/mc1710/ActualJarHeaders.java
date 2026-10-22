@@ -13,8 +13,11 @@ import org.objectweb.asm.tree.*;
 final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
     private final Map<String, byte[]> classes = new HashMap<>();
     int fontResourceReads;
-    ActualJarHeaders(File file) throws IOException {
+    private final boolean snapshotFacts;
+    ActualJarHeaders(File file) throws IOException { this(file, false); }
+    ActualJarHeaders(File file, boolean snapshotFacts) throws IOException {
         super(ActualJarHeaders.class.getClassLoader());
+        this.snapshotFacts = snapshotFacts;
         try (JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
             while (entries.hasMoreElements()) {
@@ -68,6 +71,9 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
                     body.visitCode();
                     if (method.name.equals("<init>")) { body.visitVarInsn(Opcodes.ALOAD, 0); body.visitMethodInsn(Opcodes.INVOKESPECIAL, parent, "<init>", "()V", false); }
                     Type result = Type.getReturnType(method.desc);
+                    if (snapshotFacts && snapshotBody(body, node.name, method, result)) {
+                        body.visitMaxs(0, 0); body.visitEnd(); continue;
+                    }
                     switch (result.getSort()) {
                         case Type.VOID: body.visitInsn(Opcodes.RETURN); break;
                         case Type.LONG: body.visitInsn(Opcodes.LCONST_0); body.visitInsn(Opcodes.LRETURN); break;
@@ -82,6 +88,31 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
             }
             output.visitEnd(); byte[] code = output.toByteArray(); return defineClass(name, code, 0, code.length);
         }
+    }
+    /** 只替换实际Iris的动态边界事实，成员签名仍来自发行Jar；不执行游戏静态初始化。 */
+    private boolean snapshotBody(MethodVisitor body, String owner, MethodNode method, Type result) {
+        String projection = "club/heiqi/uilib/compat/mc1710/CompatContractScenario$Projection";
+        String field = null;
+        if (owner.equals("net/coderbot/iris/Iris")) {
+            if (method.name.equals("getShaderPackLoadId")) {
+                body.visitFieldInsn(Opcodes.GETSTATIC, projection, "pack", "I");
+                body.visitInsn(Opcodes.IRETURN); return true;
+            }
+            if (method.name.equals("getPipelineManagerNullable")) field = "irisManager";
+        }
+        if (owner.equals("net/coderbot/iris/pipeline/PipelineManager")
+                && method.name.equals("getPipelineNullable")) field = "irisPipeline";
+        if (field != null) {
+            body.visitFieldInsn(Opcodes.GETSTATIC, projection, field, "Ljava/lang/Object;");
+            body.visitTypeInsn(Opcodes.CHECKCAST, result.getInternalName());
+            body.visitInsn(Opcodes.ARETURN); return true;
+        }
+        if (owner.equals("net/coderbot/iris/pipeline/DeferredWorldRenderingPipeline")
+                && method.name.equals("shouldOverrideShaders")) {
+            body.visitMethodInsn(Opcodes.INVOKESTATIC, projection, "overrideShaders", "()Z", false);
+            body.visitInsn(Opcodes.IRETURN); return true;
+        }
+        return false;
     }
     public void close() { classes.clear(); }
 }

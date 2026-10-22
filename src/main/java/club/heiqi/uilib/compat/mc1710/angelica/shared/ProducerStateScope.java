@@ -57,79 +57,38 @@ public final class ProducerStateScope implements AutoCloseable {
     private int producerVao;
 
     ProducerStateScope(
-            ClassLoader loader, GlApi gl, FontRenderContext context, HostProgramSnapshot source,
-            DrawState drawState)
-            throws ReflectiveOperationException {
+            GlApi gl, FontRenderContext context, HostProgramSnapshot source, DrawState drawState,
+            IrisReflectionBindings.Producer bindings) throws ReflectiveOperationException {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
-        Class<?> glsm =
-                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-        getFloat = glsm.getMethod("glGetFloat", int.class, FloatBuffer.class);
-        getInteger = glsm.getMethod("glGetInteger", int.class);
-        matrixMode = glsm.getMethod("glMatrixMode", int.class);
-        loadMatrix = glsm.getMethod("glLoadMatrix", FloatBuffer.class);
-        bindVao = glsm.getMethod("glBindVertexArray", int.class);
-        bindBuffer = glsm.getMethod("glBindBuffer", int.class, int.class);
-        pointer =
-                glsm.getMethod(
-                        "glVertexAttribPointer",
-                        int.class,
-                        int.class,
-                        int.class,
-                        boolean.class,
-                        int.class,
-                        long.class);
-        integerPointer =
-                glsm.getMethod(
-                        "glVertexAttribIPointer",
-                        int.class,
-                        int.class,
-                        int.class,
-                        int.class,
-                        long.class);
-        enable = glsm.getMethod("glEnableVertexAttribArray", int.class);
-        disable = glsm.getMethod("glDisableVertexAttribArray", int.class);
-        bindTexture = glsm.getMethod("glBindTexture", int.class, int.class);
-        activeTexture = glsm.getMethod("glActiveTexture", int.class);
-        color = glsm.getMethod("glColor4f", float.class, float.class, float.class, float.class);
-        Class<?> vaoManager =
-                Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader);
-        setFlags = vaoManager.getMethod("setCurrentVertexFlags", int.class);
+        getFloat = bindings.getFloat;
+        getInteger = bindings.getInteger;
+        matrixMode = bindings.matrixMode;
+        loadMatrix = bindings.loadMatrix;
+        bindVao = bindings.bindVao;
+        bindBuffer = bindings.bindBuffer;
+        pointer = bindings.pointer;
+        integerPointer = bindings.integerPointer;
+        enable = bindings.enable;
+        disable = bindings.disable;
+        bindTexture = bindings.bindTexture;
+        activeTexture = bindings.activeTexture;
+        color = bindings.color;
+        normalSetter = bindings.normalSetter;
+        setFlags = bindings.setFlags;
+        // flags、normal、INSTANCE及其实体值属于当前scope，不随成员绑定固化。
         oldFlags = drawState.vertexFlags();
-        Class<?> flags =
-                Class.forName(
-                        "com.gtnewhorizon.gtnhlib.client.renderer.vertex.VertexFlags",
-                        false,
-                        loader);
-        positionBit = flags.getField("POSITION_BIT").getInt(null);
-        colorBit = flags.getField("COLOR_BIT").getInt(null);
-        textureBit = flags.getField("TEXTURE_BIT").getInt(null);
-        normalBit = flags.getField("NORMAL_BIT").getInt(null);
-        brightnessBit = flags.getField("BRIGHTNESS_BIT").getInt(null);
-        Class<?> shader =
-                Class.forName("com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
-        normalSetter = glsm.getMethod("glNormal3f", float.class, float.class, float.class);
-        Object normal = shader.getMethod("getCurrentNormal").invoke(null);
-        Class<?> vector = normal.getClass();
-        oldNormal =
-                new float[] {
-                    vector.getField("x").getFloat(normal),
-                    vector.getField("y").getFloat(normal),
-                    vector.getField("z").getFloat(normal)
-                };
-        Class<?> capturedType =
-                Class.forName("net.coderbot.iris.uniforms.CapturedRenderingState", false, loader);
-        captured = capturedType.getField("INSTANCE").get(null);
-        blockSetter = capturedType.getMethod("setCurrentBlockEntity", int.class);
-        entitySetter = capturedType.getMethod("setCurrentEntityAndItem", int.class, int.class);
-        oldBlock =
-                ((Number) capturedType.getMethod("getCurrentRenderedBlockEntity").invoke(captured))
-                        .intValue();
-        oldEntity =
-                ((Number) capturedType.getMethod("getCurrentRenderedEntity").invoke(captured))
-                        .intValue();
-        oldItem =
-                ((Number) capturedType.getMethod("getCurrentRenderedItem").invoke(captured))
-                        .intValue();
+        positionBit = bindings.positionBit.getInt(null);
+        colorBit = bindings.colorBit.getInt(null);
+        textureBit = bindings.textureBit.getInt(null);
+        normalBit = bindings.normalBit.getInt(null);
+        brightnessBit = bindings.brightnessBit.getInt(null);
+        oldNormal = bindings.normal();
+        captured = bindings.captured.get(null);
+        blockSetter = bindings.blockSetter;
+        entitySetter = bindings.entitySetter;
+        oldBlock = ((Number) bindings.getBlock.invoke(captured)).intValue();
+        oldEntity = ((Number) bindings.getEntity.invoke(captured)).intValue();
+        oldItem = ((Number) bindings.getItem.invoke(captured)).intValue();
         effectiveVao = integer(GlTokens.GL_VERTEX_ARRAY_BINDING);
         effectiveVbo = integer(GlTokens.GL_ARRAY_BUFFER_BINDING);
         effectiveEbo = integer(GlTokens.GL_ELEMENT_ARRAY_BUFFER_BINDING);

@@ -21,8 +21,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     private final Thread thread = Thread.currentThread();
     private final ReplaySink sink;
     private final FontHostOrderQueue queue;
-    private final ClassLoader loader;
-    private final GlApi gl;
+    private final HostProgramSnapshot.Capture snapshots;
     private final ExternalReplayBoundary replayBoundary;
     private final Method seal, defer, recording, listMode, record, pause, resume;
     private final Field arena, depth, segments, deferred, segmentOwner, from, to;
@@ -34,8 +33,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
 
     public AngelicaBridge(Class<?> font, ClassLoader loader, GlApi gl, ReplaySink sink, int capacity) {
         this.sink = sink;
-        this.loader = loader;
-        this.gl = gl;
+        snapshots = new HostProgramSnapshot.Capture(loader, gl);
         queue = new FontHostOrderQueue(capacity);
         try {
             replayBoundary = new ExternalReplayBoundary(DrawState.bind(loader));
@@ -158,7 +156,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                     (Boolean) invoke(defer, null)
                             || (owner != null && ((Number) read(depth, owner)).intValue() > 0)
                             || !((List<?>) read(deferred, null)).isEmpty();
-            HostProgramSnapshot program = HostProgramSnapshot.capture(loader, gl);
+            HostProgramSnapshot program = snapshots.capture();
             sink.registerVisible(plan, context);
             queue.submit(
                     () -> HostProgramSnapshot.replay(program, () -> sink.draw(plan, context)),

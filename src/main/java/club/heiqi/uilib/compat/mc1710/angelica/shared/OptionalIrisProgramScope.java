@@ -9,7 +9,6 @@ import club.heiqi.uilib.host.client.gl.GlProgramScope;
 import club.heiqi.uilib.host.client.gl.GlProgramAttribute;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,32 +44,31 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
     public final List<Attribute> requiredAttributes;
     private final List<GlProgramAttribute> programAttributes;
     private final Object pipeline, oldInputs, oldPhase, oldTranslucency;
-    private final Method setInputs, setPhase, setTranslucency, rebind;
+    private final Method setInputs, setPhase, setTranslucency, rebind, getProgram;
     private final GlApi gl;
     private boolean closed;
     private final ProducerStateScope producer;
     public final int entityId, itemId, blockEntityId;
     private final SourceExtendedAttributes sourceExtended;
     private final DrawState drawState;
-    private final Class<?> pipelineType;
 
     /** prepare选择Atlas view前只读查询，不改inputs/pass/program/FBO。null表示没有Iris world pass。 */
     public static SamplingView preview(ClassLoader loader, FontRenderContext context) {
+        return preview(loader, context, null);
+    }
+
+    static SamplingView preview(
+            ClassLoader loader, FontRenderContext context, IrisProgramProvider provider) {
         try {
-            Class<?> iris = Class.forName("net.coderbot.iris.Iris", false, loader);
-            Object manager = iris.getMethod("getPipelineManagerNullable").invoke(null);
-            if (manager == null) return null;
-            Object pipeline = manager.getClass().getMethod("getPipelineNullable").invoke(manager);
+            IrisReflectionBindings bindings = provider == null
+                    ? new IrisReflectionBindings(loader) : provider.bindings();
+            Object pipeline = bindings.pipeline();
             if (pipeline == null) return null;
-            Class<?> type =
-                    Class.forName(
-                            "net.coderbot.iris.pipeline.DeferredWorldRenderingPipeline",
-                            false,
-                            loader);
+            IrisReflectionBindings.World world = bindings.world();
             HostProgramSnapshot captured = HostProgramSnapshot.current();
             if (captured != null) return captured.active ? SamplingView.STRAIGHT_RGBA : null;
-            return type.isInstance(pipeline)
-                            && (Boolean) type.getMethod("shouldOverrideShaders").invoke(pipeline)
+            return world.type.isInstance(pipeline)
+                            && (Boolean) world.shouldOverride.invoke(pipeline)
                     ? SamplingView.STRAIGHT_RGBA
                     : null;
         } catch (ClassNotFoundException absent) {
@@ -90,75 +88,57 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             ClassLoader loader, GlApi gl, FontRenderContext context, IrisProgramProvider provider) {
         HostProgramSnapshot source = HostProgramSnapshot.current();
         if (source != null && !source.active) return null;
-        final Class<?> iris;
         try {
-            iris = Class.forName("net.coderbot.iris.Iris", false, loader);
-        } catch (ClassNotFoundException absent) {
-            if ("net.coderbot.iris.Iris".equals(absent.getMessage())) return null;
-            throw new IllegalStateException("Iris存在但必需ABI类缺失", absent);
-        }
-        try {
-            Object manager = iris.getMethod("getPipelineManagerNullable").invoke(null);
-            if (manager == null) return null;
-            Object pipeline = manager.getClass().getMethod("getPipelineNullable").invoke(manager);
+            IrisReflectionBindings bindings = provider == null
+                    ? new IrisReflectionBindings(loader) : provider.bindings();
+            Object pipeline = bindings.pipeline();
             if (pipeline == null) return null;
-            Class<?> deferred =
-                    Class.forName(
-                            "net.coderbot.iris.pipeline.DeferredWorldRenderingPipeline",
-                            false,
-                            loader);
-            if (!deferred.isInstance(pipeline)) return null;
-            if (!(Boolean) deferred.getMethod("shouldOverrideShaders").invoke(pipeline)) {
+            IrisReflectionBindings.World world = bindings.world();
+            if (!world.type.isInstance(pipeline)) return null;
+            if (!(Boolean) world.shouldOverride.invoke(pipeline)) {
                 HostProgramSnapshot captured = HostProgramSnapshot.current();
                 if (captured != null && captured.active)
                     throw new IllegalStateException("延期Iris文字回放已离开有效world pass，禁止own shader回退");
                 return null;
             }
             DrawState drawState = provider == null ? DrawState.bind(loader) : provider.drawState();
-            return new OptionalIrisProgramScope(pipeline, deferred, loader, gl, context, drawState);
+            return new OptionalIrisProgramScope(
+                    pipeline, gl, context, drawState, world.scope(loader, gl));
+        } catch (ClassNotFoundException absent) {
+            if ("net.coderbot.iris.Iris".equals(absent.getMessage())) return null;
+            throw new IllegalStateException("Iris存在但必需ABI类缺失", absent);
         } catch (ReflectiveOperationException | LinkageError error) {
             throw new IllegalStateException("Iris world program接口失配，禁止own shader伪兼容", error);
         }
     }
 
     private OptionalIrisProgramScope(
-            Object pipeline, Class<?> type, ClassLoader loader, GlApi gl, FontRenderContext context,
-            DrawState drawState)
-            throws ReflectiveOperationException {
+            Object pipeline, GlApi gl, FontRenderContext context, DrawState drawState,
+            IrisReflectionBindings.Scope bindings) throws ReflectiveOperationException {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         this.pipeline = pipeline;
-        pipelineType = type;
-        Class<?> inputsType =
-                Class.forName(
-                        "net.coderbot.iris.gbuffer_overrides.matching.InputAvailability",
-                        false,
-                        loader);
-        IrisInputAvailability inputAvailability = new IrisInputAvailability(inputsType);
-        setInputs = type.getMethod("setInputs", inputsType);
-        Method getPhase = type.getMethod("getPhase");
-        setPhase = type.getMethod("setPhase", getPhase.getReturnType());
-        setTranslucency = type.getMethod("setDeclaredTranslucency", Boolean.class);
-        rebind = type.getMethod("rebindCurrentPass");
-        Field inputs = type.getDeclaredField("inputs");
-        inputs.setAccessible(true);
-        oldInputs = inputs.get(pipeline);
-        Field translucent = type.getDeclaredField("declaredTranslucent");
-        translucent.setAccessible(true);
-        oldTranslucency = translucent.get(pipeline);
+        IrisInputAvailability inputAvailability = bindings.inputAvailability;
+        setInputs = bindings.setInputs;
+        Method getPhase = bindings.getPhase;
+        setPhase = bindings.setPhase;
+        setTranslucency = bindings.setTranslucency;
+        rebind = bindings.rebind;
+        getProgram = bindings.getProgram;
+        // 成员跨scope复用，当前pass的输入、phase和program仍逐次读取。
+        oldInputs = bindings.inputs.get(pipeline);
+        oldTranslucency = bindings.translucent.get(pipeline);
         oldPhase = getPhase.invoke(pipeline);
-        Class<?> glsm =
-                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
         this.drawState = drawState;
         packedLight = context.state.packedLight;
         normal = context.state.normal();
         lightmapActive = context.state.lightmapActive;
         HostProgramSnapshot source = HostProgramSnapshot.current();
-        if (source == null) source = HostProgramSnapshot.capture(loader, gl);
+        if (source == null) source = bindings.snapshots.capture();
         sourceExtended = source == null ? null : source.extended;
         entityId = source == null ? 0 : source.entityId;
         itemId = source == null ? 0 : source.itemId;
         blockEntityId = context.state.blockEntityId;
-        producer = new ProducerStateScope(loader, gl, context, source, drawState);
+        producer = new ProducerStateScope(gl, context, source, drawState, bindings.producer);
         try {
             HostProgramSnapshot captured = HostProgramSnapshot.current();
             if (captured != null && captured.active) setPhase.invoke(pipeline, captured.phase);
@@ -167,7 +147,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
                     pipeline, inputAvailability.create(true, context.state.lightmapActive));
             rebind.invoke(pipeline);
             programId =
-                    ((Number) type.getMethod("getActivePassProgramId").invoke(pipeline)).intValue();
+                    ((Number) getProgram.invoke(pipeline)).intValue();
             if (programId <= 0) throw new IllegalStateException("Iris当前font pass没有可提交program");
             // Pass.use 按实际 program 的 draw buffers 和 before/after 阶段绑定目标。
             // 历史 caller 可以使用另一 FBO；保留 Iris 的选择，不以句柄相同误拒绝合法回放。
@@ -334,9 +314,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
                     restore();
                     int restored =
                             ((Number)
-                                            pipelineType
-                                                    .getMethod("getActivePassProgramId")
-                                                    .invoke(pipeline))
+                                            getProgram.invoke(pipeline))
                                     .intValue();
                     if (restored > 0) drawState.refreshUniforms(restored);
                 } catch (ReflectiveOperationException error) {
