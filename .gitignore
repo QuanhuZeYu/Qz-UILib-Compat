@@ -3,3 +3,4 @@ build/
 .superpowers/
 *.log
 __pycache__/
+.idea/
