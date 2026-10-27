@@ -12,6 +12,17 @@ public final class AngelicaItemPort extends ItemStateScope.Port {
         try { return Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader); }
         catch (ClassNotFoundException error) { throw new IllegalStateException(error); }
     }
+    @Override protected int integer(int name) {
+        // GLSM 的模拟纹理/矩阵集合由自身能力限定，不能使用 driver 的跨阶段 combined 上限。
+        if (name == 34018 || name == 35661) {
+            try { return type.getField("MAX_TEXTURE_UNITS").getInt(null); }
+            catch (ReflectiveOperationException error) {
+                throw new IllegalStateException("无法读取 Angelica 物品纹理单元能力", error);
+            }
+        }
+        return super.integer(name);
+    }
+
     @Override public int clientDepth() {
 
             try {
