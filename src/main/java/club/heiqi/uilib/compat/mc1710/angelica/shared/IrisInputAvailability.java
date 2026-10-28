@@ -3,7 +3,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
-/** Iris 输入状态的版本边界；2.2.28 改为枚举，必须走工厂而不能反射构造枚举。 */
+/** 按 Iris 输入状态的实际类型选择入口：2.2.10 使用构造器，2.2.28 枚举使用 of 工厂。 */
 final class IrisInputAvailability {
     private final Constructor<?> constructor;
     private final Method factory;

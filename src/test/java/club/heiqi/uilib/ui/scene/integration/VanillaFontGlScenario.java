@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import static org.lwjgl.opengl.GL32C.*;
 
-/** 纯LWJGL普通world生产consumer验收；不使用MC包装，也不声称Iris已支持。 */
+/** 以独立 LWJGL 场景验证普通 world 生产 consumer 的像素与状态恢复；Iris 合成 producer 由具名 case 覆盖，完整游戏接入由实机验证。 */
 public final class VanillaFontGlScenario extends TestApplication {
     private static final int W = 240, H = 160;
     private static final LayoutBox VIEW = new LayoutBox(0, 0, W, H),
@@ -91,7 +91,7 @@ public final class VanillaFontGlScenario extends TestApplication {
             GlPaintPlanRenderer renderer,
             PaintPlan plan,
             FontRenderContext context) {
-        // 正式owner入口统一登记visiblekeys并扣整个presentation预算，consumer不自行retain。
+        // 正式 owner 统一登记 visible keys、持有租约并扣除整个 presentation 的预算。
         owner.beginPresentation(System.nanoTime());
         try (GlPaintPlanRenderer.Prepared p = owner.prepare(renderer, plan, context)) {
             p.render(context);
@@ -220,7 +220,7 @@ public final class VanillaFontGlScenario extends TestApplication {
                         .add(PaintCommand.rect(new LayoutBox(0, 0, 40, 20), LOCAL, 0xffff8040))
                         .build();
         target = context(fbo, light, false, 0, true, -2);
-        // 设置与ticket不同的actual现场，验证scope只临时切target/depth/viewport，保stencil/mask。
+        // 设置与 ticket 不同的 driver 现场，验证 scope 临时切换 target/depth/viewport，并保留 stencil/mask。
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glViewport(2, 4, 30, 40);
         glDepthFunc(GL_GEQUAL);
@@ -257,7 +257,7 @@ public final class VanillaFontGlScenario extends TestApplication {
                 || !glIsEnabled(GL_STENCIL_TEST)
                 || glGetInteger(GL_STENCIL_WRITEMASK) != 0)
             throw new AssertionError("world target/depth/stencil现场未恢复");
-        // 同深度LESS遮挡，不可被overlay flatten或关闭depthwrite绕过。
+        // 同深度下由 LESS 与 depth write 保持遮挡，重复绘制应保留首次像素。
         draw(owner, renderer, solid, target);
         if (!Arrays.equals(pixels, read(fbo))) throw new AssertionError("world重复深度未遮挡");
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
@@ -628,7 +628,7 @@ public final class VanillaFontGlScenario extends TestApplication {
     }
 
     private void alternatingViews() throws Exception {
-        // 真实回归：两view交替，每consumer仅一paddedrow/一call，partial必须各自推进到ready。
+        // 两 view 交替且每个 consumer 仅获一 padded row/一次调用预算，验证各自 partial 持续推进到 ready。
         try (GlGlyphAtlas alternating =
                 new GlGlyphAtlas(
                         new Lwjgl3GlApi(), owner.settings().mode, owner.settings().atlas)) {

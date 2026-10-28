@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.text.*;
 import java.lang.reflect.*;
 import java.util.*;
 
-/** 执行生产Bridge/有序队列；仅替换外部宿主端点，不将逻辑合批次数当作真实GL draw数。 */
+/** 以替代宿主端点执行生产 Bridge/有序队列，统计逻辑批次与票据顺序；实际 GL draw 数由 GL 场景验证。 */
 final class WorldFontBatchScenario {
     public static final class Endpoints {
         public static Object arena;
@@ -159,7 +159,7 @@ final class WorldFontBatchScenario {
         }
         System.out.println("WORLD_FONT_BATCH_PASS sameSource=3to1 orderedABA=true oldBarrier=true overflowAtomic=true leasesExactlyOnce=true failureFrameClose=true immediate=true shaderExecuted=false");
     }
-    /** 此处只检查来源值的批次边界，实际Iris换代拒绝由双发行Jar快照测试覆盖。 */
+    /** 检查来源值的合批边界；双发行 Jar 的快照场景另行验证 Iris 换代拒绝。 */
     private static void pipelineBoundary(FontRenderContext a, FontRenderContext b) throws Exception {
         Constructor<HostProgramSnapshot> ctor = HostProgramSnapshot.class.getDeclaredConstructor(
                 HostProgramSnapshot.Capture.class,Object.class,Object.class,int.class,boolean.class,

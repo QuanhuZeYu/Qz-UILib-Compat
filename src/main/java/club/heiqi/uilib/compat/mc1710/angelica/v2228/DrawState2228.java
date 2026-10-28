@@ -4,7 +4,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.DrawState;
 
-/** 2.2.28将draw和VAO事实归入当前上下文；每次使用ctx，不能缓存其对象。 */
+/** 2.2.28 的 draw 与 VAO 状态由当前上下文持有，每次操作重新读取 ctx。 */
 public final class DrawState2228 implements DrawState {
     private final Method context, draw, refresh, flags, stabilize, suspend, resume;
     private final Field vaos;

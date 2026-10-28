@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.scene.input.SceneCompositionSource;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 
-/** GTNH lwjgl3ify 的可选事实桥；按宿主唯一 SDL 消费序复制，Core 持有焦点及编辑目标权威。 */
+/** 按 GTNH lwjgl3ify 的唯一 SDL 消费顺序复制事件事实，焦点与编辑目标由 Core 管理。 */
 public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
     private static final AtomicReference<Lwjgl3ifyTextInput> OWNER = new AtomicReference<>();
     private final AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
@@ -26,7 +26,7 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
     private volatile boolean closed;
     private boolean receivingText, windowAvailable = true, textRequested, textStarted;
 
-    /** 只查可选资源；普通 LWJGL2 的类加载不初始化 SDL。 */
+    /** 通过可选资源及成员签名判断支持范围，SDL 初始化由 lwjgl3ify 宿主管理。 */
     public static boolean supported() {
         Lwjgl3ifyTextInput owner = OWNER.get();
         if (owner != null) owner.checkFailure();
@@ -57,7 +57,7 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
             throw new IllegalStateException("Another native text input bridge is registered");
     }
 
-    /** 可选RFB接线在每项SDL消费前调用；无活动页面时不读取原生事件。 */
+    /** RFB 在每项 SDL 消费前调用；活动页面的 owner 负责读取事件，owner 缺席时直接返回。 */
     public static void captureCurrentEvent() {
         Lwjgl3ifyTextInput owner = OWNER.get();
         if (owner == null) return;
@@ -73,7 +73,7 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
 
     public boolean active() { checkFailure(); return !closed && OWNER.get() == this; }
 
-    /** 重复调用不增加 lwjgl3ify 的 textInputDepth。 */
+    /** 按启停状态边沿更新 lwjgl3ify 的 textInputDepth，重复请求保持当前深度。 */
     public synchronized void textInput(boolean enabled) {
         checkFailure();
         if (closed) return;
@@ -98,8 +98,8 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
                 if (composition != null) pending.add(NativeEvent.edit(SceneEditEvent.compositionCancel(composition)));
             }
         }
-        // SDL_StopTextInput取消组字但不承诺最终提交，也不清空已排队文本。
-        // 在原SDL线程用原消费者耗尽旧事实后退休来源；整个边界内文本不进入新capture。
+        // SDL_StopTextInput 取消组字，提交以实际 TEXT_INPUT 事件为准，已排队文本仍由原消费者处理。
+        // 在原 SDL 线程耗尽旧事实后退休来源，边界完成后才接收新 capture 的文本。
         invoke(bindings.mainThread, null, (Runnable) () -> {
             if (!enabled) invoke(bindings.end, null);
             invoke(bindings.pump, null);
@@ -112,7 +112,7 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
         textStarted = enabled;
     }
 
-    /** 顺序来自 Lwjgl3ifyEventLoop 的同一次逐项消费，不按 Java 递交时刻排序。 */
+    /** 按 Lwjgl3ifyEventLoop 的逐项消费顺序交付事件，保留同次 drain 内的原生顺序。 */
     public List<NativeEvent> drain() {
         checkFailure();
         synchronized (queueLock) {
@@ -168,7 +168,7 @@ public final class Lwjgl3ifyTextInput implements SceneNativeTextInput.Port {
         }
     }
 
-    /** 只在增强路径构造时解析；Java8 字节码不硬链接 SDL 或 org.lwjglx。 */
+    /** 增强路径构造时反射绑定 SDL 与 org.lwjglx，使 Java8 入口保留可选加载边界。 */
     private static final class Bindings {
         final Field windowId, currentEvent;
         final Method address, createEvent, type, key, edit, text, motion, button, wheel, window, common;

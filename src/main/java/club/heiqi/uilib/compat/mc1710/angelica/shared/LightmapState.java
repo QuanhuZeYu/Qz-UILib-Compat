@@ -2,7 +2,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import club.heiqi.uilib.compat.mc1710.AngelicaAbi;
 
-/** 亮度来源随Angelica ABI变迁；不从原始driver猜测缓存状态。 */
+/** 按 Angelica ABI 读取宿主持有的有效亮度状态。 */
 public interface LightmapState {
     float x() throws ReflectiveOperationException;
     float y() throws ReflectiveOperationException;

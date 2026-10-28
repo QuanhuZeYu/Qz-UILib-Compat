@@ -8,8 +8,8 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import club.heiqi.uilib.compat.mc1710.AngelicaAbi;
 import club.heiqi.uilib.compat.mc1710.lwjgl3ify.sdl.SceneNativeInputSupport;
 
-/** 仅读取资源选择版本，Mixin目标不能在插件选择阶段Class.forName。
- * UniMixins会将ASM包重映射至运行时ABI；只能声明一个ClassNode版本，否则映射后方法重名。 */
+/** 根据 class 资源选择 Mixin，目标类的加载归 Mixin 阶段。
+ * UniMixins 将 ASM 包重映射至运行时 ABI；单一 ClassNode 签名保持重映射后的方法签名唯一。 */
 public final class CompatMixinPlugin implements IMixinConfigPlugin {
     public void onLoad(String mixinPackage) {}
     public String getRefMapperConfig() { return null; }

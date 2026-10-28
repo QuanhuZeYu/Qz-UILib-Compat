@@ -3,7 +3,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.v2210;
 import java.lang.reflect.Method;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.DrawState;
 
-/** 2.2.10静态draw及VAO入口。 */
+/** 通过 2.2.10 的静态入口读取 draw 与 VAO 状态。 */
 public final class DrawState2210 implements DrawState {
     private final Method draw, refresh, flags;
     public DrawState2210(ClassLoader loader) throws ReflectiveOperationException {
@@ -11,7 +11,7 @@ public final class DrawState2210 implements DrawState {
         refresh = Class.forName("com.gtnewhorizons.angelica.glsm.CompatUniformManager", false, loader).getMethod("refreshCompatUniforms", int.class);
         flags = Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader).getMethod("getCurrentVertexFlags");
     }
-    // 2.2.10没有状态变更自动flush协议；保持既有提交屏障，不强制结束TESR pass。
+    // 2.2.10 由既有提交屏障稳定宿主；TESR pass 按宿主生命周期结束，此处状态保护为空操作。
     public void stabilizeHost() {}
     public void suspendHost() {}
     public void resumeHost() {}

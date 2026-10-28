@@ -12,8 +12,8 @@ import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 
-/** #69：monitor缓存含字体来源；开关变化必须重编译，不能混播旧字符与逻辑PaintPlan。
- * 保留AE2六向变换、数量更新和COMPILE_AND_EXECUTE，逻辑文字由Angelica按当前矩阵回放。 */
+/** #69：monitor 缓存随字体开关和排版代际重建，使原版字符与逻辑 PaintPlan 各自使用当前来源。
+ * AE2 保留六向变换、数量更新和 COMPILE_AND_EXECUTE，逻辑文字由 Angelica 按当前矩阵回放。 */
 @Pseudo
 @Mixin(targets = "appeng.parts.reporting.AbstractPartMonitor", remap = false)
 public abstract class MonitorFontCacheMixin {
@@ -40,7 +40,7 @@ public abstract class MonitorFontCacheMixin {
         }
     }
 
-    // 原生GL列表不能保存VAO/uniform或未来字形；只让原AE2绘制体逐帧执行，不重写其坐标和业务。
+    // 字体替换开启且 Angelica 缺席时逐帧执行原 AE2 绘制体，使 VAO、uniform 和后续字形在当前帧生效。
     @WrapOperation(method = "renderDynamic(DDDLappeng/api/parts/IPartRenderHelper;Lnet/minecraft/client/renderer/RenderBlocks;)V",
             at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/GL11;glNewList(II)V"), require = 1)
     private void qz$beginList(int id, int mode, Operation<Void> original) {

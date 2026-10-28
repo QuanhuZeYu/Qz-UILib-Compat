@@ -2,7 +2,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import club.heiqi.uilib.compat.mc1710.AngelicaAbi;
 
-/** 每次操作读取所属上下文，不在scope创建时冻结另一次draw的GLContextState。 */
+/** 每次操作读取所属 draw 的当前上下文，使短 scope 跟随有效 GLContextState。 */
 public interface DrawState {
     void beforeDraw(int mode) throws ReflectiveOperationException;
     void stabilizeHost() throws ReflectiveOperationException;

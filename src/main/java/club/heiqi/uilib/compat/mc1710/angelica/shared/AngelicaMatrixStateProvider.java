@@ -17,15 +17,14 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
-/** 可选Angelica有效状态读取，仅缓存稳定访问入口、不持mutable JOML或GL上下文实例。
- * 固定来源：GLSM glGetFloat(int,FloatBuffer)、getEffectiveAlphaState、texture-unit1 matrix；
- * raster/viewport/depth/scissor统一经GLSM有效query；无缓存特例的枚举由GLSM回退driver。
- * 存在但不匹配时显式失败，不假装driver等价。
- * provider不拥有GL/字体对象；构造只解析入口，capture在宿主GL线程执行。 */
+/** 读取可选 Angelica 的有效状态，缓存稳定访问入口，mutable JOML 与 GL 上下文按次读取。
+ * 矩阵、alpha 与 texture-unit1 matrix 取自 GLSM；raster/viewport/depth/scissor 经其有效 query 读取。
+ * GLSM 按枚举的缓存覆盖范围回退 driver，宿主 ABI 失配时明确失败。
+ * 构造负责绑定入口，capture 在宿主 GL 线程执行；GL 与字体对象的生命周期归宿主管理。 */
 public final class AngelicaMatrixStateProvider
         implements LwjglFontContextCapture.MatrixStateProvider {
     private final GlApi gl;
-    // 同一provider只在所属GL线程同步查询；三种view共用有界scratch，结果在下一次查询前复制。
+    // 同一 provider 在所属 GL 线程同步查询；三种 view 共用有界 scratch，结果在下一次查询前复制。
     private final ByteBuffer queryBytes = ByteBuffer.allocateDirect(1024).order(ByteOrder.nativeOrder());
     private final FloatBuffer queryFloats = queryBytes.asFloatBuffer();
     private final IntBuffer queryIntegers = queryBytes.asIntBuffer();
@@ -138,7 +137,7 @@ public final class AngelicaMatrixStateProvider
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.states.AlphaState", false, loader);
             alphaConstructor = constructor(alpha);
-            // 此入口填充dest；校验返回引用后仅丢弃返回值，仍读取本次新建的dest。
+            // 此入口填充 dest；先校验返回引用的 ABI，再适配为 void，查询结果从本次新建的 dest 读取。
             getAlpha = bind(glsm.getMethod("getEffectiveAlphaState", alpha), Object.class, Object.class)
                     .asType(MethodType.methodType(void.class, Object.class));
             alphaFunction = bind(alpha.getMethod("getFunction"), int.class, Object.class);
@@ -184,8 +183,8 @@ public final class AngelicaMatrixStateProvider
         }
     }
 
-    // 外部入口只用publicLookup；引用擦除到Object，primitive与buffer必须与真实ABI完全一致。
-    // asType本身允许装箱/数值转换，先检查可防止不匹配ABI在热路径悄悄引入这些转换。
+    // 外部入口经 publicLookup 绑定；引用擦除为 Object，primitive 与 buffer 保持真实 ABI。
+    // asType 支持装箱与数值转换，预先检查签名以保持热路径的精确调用语义。
     private static MethodHandle exact(MethodHandle handle, Class<?> result, Class<?>... parameters)
             throws NoSuchMethodException {
         MethodType source = handle.type(), target = MethodType.methodType(result, parameters);
@@ -216,7 +215,7 @@ public final class AngelicaMatrixStateProvider
     }
 
     private static Throwable checkedFailure(Throwable error) {
-        // 未检查异常原样传播；checked 失败由所属查询补充边界诊断。
+        // RuntimeException 与 Error 原样传播；checked 失败由所属查询补充边界诊断。
         if (error instanceof RuntimeException) throw (RuntimeException) error;
         if (error instanceof Error) throw (Error) error;
         return error;
@@ -233,8 +232,8 @@ public final class AngelicaMatrixStateProvider
             Object textures = (Object) getTextures.invokeExact();
             int texture =
                     (int) bindingValue.invokeExact((Object) unitBinding.invokeExact(textures, 1));
-            // 专用宿主font判据：BatchingFontRenderer.isWorldSpaceText以m33()==0识别透视。
-            // 它不是通用world分类；custom projection应使用显式MatrixStateProvider。
+            // 沿用宿主字体判据：BatchingFontRenderer.isWorldSpaceText 以 m33()==0 识别透视。
+            // 此分类范围限于宿主字体；custom projection 由显式 MatrixStateProvider 描述。
             boolean lit =
                     p[15] == 0
                             && texture != 0
@@ -291,7 +290,7 @@ public final class AngelicaMatrixStateProvider
     @Override
     public int integer(int name) {
         try {
-            // 仅背面模板状态需要选择有效 getter；其他枚举直接交给 GLSM。
+            // 背面模板状态通过有效 getter 读取，其他枚举由 GLSM query 处理。
             for (int i = 0; i < BACK_STENCIL_NAMES.length; i++)
                 if (name == BACK_STENCIL_NAMES[i] && (boolean) caching.invokeExact())
                     return (int) backStencilGetters[i].invokeExact((Object) getStencil.invokeExact());
@@ -360,9 +359,9 @@ public final class AngelicaMatrixStateProvider
 
     @Override
     public FontRenderContext.RasterState rasterState() {
-        // front stencil/colorMask/depthRange/viewport/cull走GLSM query缓存；back stencil/offset
-        // glGet未覆盖，额外读取公开state getter（caching关闭则仍走GLSM query）。
-        // scissor box的宿主setter直接写driver，query真实fallback。Iris锁blend须取readEffective。
+        // front stencil/colorMask/depthRange/viewport/cull 走 GLSM query 缓存；back stencil/offset
+        // 在 caching 开启时读公开 state getter，关闭时走 GLSM query。
+        // scissor box 由宿主 setter 直写 driver，query 使用对应 fallback；Iris 锁定的 blend 取有效快照。
         try {
             Object blend = (Object) effectiveBlend.invokeExact((Object) blendConstructor.invokeExact());
             int[] values = new int[6];
@@ -382,7 +381,7 @@ public final class AngelicaMatrixStateProvider
     private FloatBuffer floats(int count) {
         checkCount(count, queryFloats.capacity());
         queryFloats.clear();
-        // GLSM未缓存的枚举仍可进入LWJGL2；小向量查询也必须保留至少16个元素。
+        // 枚举经 GLSM 回退 LWJGL2 时要求至少 16 个元素，小向量查询也保留该容量。
         queryFloats.limit(Math.max(16, count));
         return queryFloats;
     }

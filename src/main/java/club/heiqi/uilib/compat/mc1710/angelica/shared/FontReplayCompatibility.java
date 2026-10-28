@@ -2,14 +2,14 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 
-/** 连续字体票据的完整来源值比较；不查询GL、不重映射坐标，也不持有额外状态。
- * 相等只允许同一短段内合计划，不能替代回放时的context、pack和资源代际校验。 */
+/** 按已捕获的完整来源值比较连续字体票据，保留原坐标并直接计算合并资格。
+ * 相等时可在同一短段合并计划；回放仍按各自合同校验 context、pack 与资源代际。 */
 final class FontReplayCompatibility {
     private FontReplayCompatibility() {}
 
     static boolean same(FontRenderContext a, FontRenderContext b,
             HostProgramSnapshot sa, HostProgramSnapshot sb) {
-        // legacy上下文缺少完整光栅事实，即使对象相同也不据此合并。
+        // legacy 上下文缺少完整光栅事实时返回 false，合并资格要求来源值完整。
         if (a == null || b == null || a.rasterState == null || b.rasterState == null) {
             return false;
         }

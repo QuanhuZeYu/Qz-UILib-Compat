@@ -4,7 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.LightmapState;
 
-/** 2.2.28将亮度迁入当前GLContextState，packed值也读取同一上下文。 */
+/** 2.2.28 从当前 GLContextState 读取亮度分量，packed 值由宿主同上下文入口提供。 */
 public final class LightmapState2228 implements LightmapState {
     private final Field x, y;
     private final Method context, packed;

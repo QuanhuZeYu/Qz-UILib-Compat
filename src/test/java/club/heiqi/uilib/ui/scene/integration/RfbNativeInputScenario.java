@@ -18,7 +18,7 @@ import com.gtnewhorizons.retrofuturabootstrap.SharedConfig;
 import com.gtnewhorizons.retrofuturabootstrap.api.*;
 import club.heiqi.uilib.compat.mc1710.lwjgl3ify.rfb.NativeInputPlugin;
 
-/** 原RFB类加载器保留宿主排除，变换真实EventLoop字节码后再运行无窗口消费事实场景。 */
+/** 沿原 RFB 类加载器变换真实 EventLoop 字节码，验证宿主排除保持原值，再执行无窗口消费场景。 */
 public final class RfbNativeInputScenario {
     public static void main(String[] args) throws Exception {
         NativeInputPlugin plugin = new NativeInputPlugin();

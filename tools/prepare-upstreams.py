@@ -28,7 +28,7 @@ def version():
 
 
 def unpack(archive, destination, component, selected_version):
-    # 检查标准仓库布局和必需接口；上游之间不得覆盖同一路径。
+    # 校验标准 Maven 布局与必需接口，跨上游路径冲突时报告错误。
     required = {
         "core": ("core:development-java8", "core-verification:"),
         "platform": ("gl-renderer:java8", "font-adapter:java8", "lwjgl2-adapter:java8", "lwjgl3-adapter:java8", "platform-verification:"),
@@ -67,7 +67,7 @@ def main():
     downloads = directory / "downloads"
     repository = directory / "maven"
     downloads.mkdir(parents=True, exist_ok=True)
-    # 解包暂存完成后才替换本仓 CI Maven 目录，下载失败不能留下可误用的半套仓库。
+    # 下载、解包与校验成功后替换 CI Maven 目录，准备阶段失败时保留原仓库。
     staging = directory / "maven.pending"
     if staging.exists():
         shutil.rmtree(staging)

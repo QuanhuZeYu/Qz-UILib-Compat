@@ -11,8 +11,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.AngelicaBridge;
 
-/** 仅plugin确认可选Angelica类存在时安装；require=1拒绝错版本，不依赖priority证明覆盖。
- * 主绘制仍UILib的共享plan/backend；这里仅旧segment保序及安全生命周期通知。 */
+/** 插件按 Angelica 资源与 ABI 安装钩子，require 校验注入点数量，失配时明确失败。
+ * 旧 segment 的顺序与生命周期由此通知，主绘制由 UILib 共享 plan/backend 完成。 */
 @Pseudo
 @Mixin(targets = "com.gtnewhorizons.angelica.client.font.BatchingFontRenderer", remap = false)
 public abstract class AngelicaFontOrderMixin {
@@ -26,8 +26,8 @@ public abstract class AngelicaFontOrderMixin {
         AngelicaBridge.sealed(this);
     }
 
-    // WrapOperation使用Injector.validateParams，同维引用数组可Coerce；CallbackInjector的数组分支不允许。
-    // 保留实际owner，两个renderer可以都有[0,1)；保序通知在原helper调用之前执行。
+    // WrapOperation 的 Injector.validateParams 支持同维引用数组 Coerce；CallbackInjector 的数组分支要求原类型。
+    // 两个 renderer 都可能拥有 [0,1) 范围，保序通知携带实际 owner，并在原 helper 前执行。
     @WrapOperation(
             method = {"flushDeferredTextInner()V", "flushBatchInner()V"},
             at =

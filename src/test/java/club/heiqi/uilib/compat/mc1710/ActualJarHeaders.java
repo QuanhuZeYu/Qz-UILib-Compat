@@ -7,9 +7,9 @@ import java.util.jar.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
-/** 从实际Jar产生只含原始成员签名的可加载header，避免静态初始化游戏/GL。
- * 保留真实字段、descriptor、访问位及继承；仅剥离执行体，缺少的MC参数类型用空壳占位。
- * 生产反射构造器直接绑定这些原始签名，能发现真实ABI迁移，不能代替游戏执行验证。 */
+/** 从实际 Jar 生成可加载 header，保留原始字段、descriptor、访问位与 Jar 内继承关系。
+ * 执行体替换为空返回或场景投影，缺失的 MC 参数类型用空壳占位，类初始化保持隔离。
+ * 此处验证生产反射绑定与真实 ABI 迁移；游戏执行行为由实机验证覆盖。 */
 final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
     private final Map<String, byte[]> classes = new HashMap<>();
     int fontResourceReads;
@@ -94,7 +94,7 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
             output.visitEnd(); byte[] code = output.toByteArray(); return defineClass(name, code, 0, code.length);
         }
     }
-    /** 只替换实际Iris的动态边界事实，成员签名仍来自发行Jar；不执行游戏静态初始化。 */
+    /** 为实际 Iris 成员签名提供动态边界事实，游戏静态初始化由 header 隔离。 */
     private boolean snapshotBody(MethodVisitor body, String owner, MethodNode method, Type result) {
         String projection = "club/heiqi/uilib/compat/mc1710/CompatContractScenario$Projection";
         String field = null;
@@ -119,7 +119,7 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
         }
         return false;
     }
-    /** 只给查询入口供值，执行生产provider与真实descriptor；不模拟GLSM/Iris有效状态算法。 */
+    /** 为查询入口供值，验证生产 provider 与真实 descriptor 的接线；GLSM/Iris 有效状态算法由宿主验证覆盖。 */
     private boolean matrixBody(MethodVisitor body, String owner, MethodNode method, Type result) {
         String projection = "club/heiqi/uilib/compat/mc1710/CompatContractScenario$Projection";
         if (owner.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")) {

@@ -3,7 +3,7 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 import java.lang.reflect.Method;
 import club.heiqi.uilib.host.client.image.ItemStateScope;
 
-/** 保存Angelica缓存栈及Iris上下文，不改变UILib物品绘制模型。 */
+/** 为 UILib 物品绘制保存并恢复 Angelica 缓存栈与 Iris 上下文。 */
 public final class AngelicaItemPort extends ItemStateScope.Port {
     public AngelicaItemPort(ClassLoader loader) {
         super(load(loader));
@@ -13,7 +13,7 @@ public final class AngelicaItemPort extends ItemStateScope.Port {
         catch (ClassNotFoundException error) { throw new IllegalStateException(error); }
     }
     @Override protected int integer(int name) {
-        // GLSM 的模拟纹理/矩阵集合由自身能力限定，不能使用 driver 的跨阶段 combined 上限。
+        // GLSM 模拟纹理与矩阵集合按宿主 MAX_TEXTURE_UNITS 分配，driver 的跨阶段 combined 上限属于另一能力范围。
         if (name == 34018 || name == 35661) {
             try { return type.getField("MAX_TEXTURE_UNITS").getInt(null); }
             catch (ReflectiveOperationException error) {
@@ -57,7 +57,7 @@ public final class AngelicaItemPort extends ItemStateScope.Port {
         }
 
 
-    /** Iris item/entity/block uniform 跟随有效宿主上下文，不能从 driver GL 推导。 */
+    /** 从有效宿主上下文保存并恢复 Iris 的 item/entity/block uniform 来源。 */
     public static final class Captured {
         final Object state;
         final int block, entity, item;

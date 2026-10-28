@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.config.ConfigDocument;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 
-/** GTNH 私用显示符号的可选解码；不修改业务文本、字体候选或字体引擎。 */
+/** 将 GTNH 私用符号映射为显示字符；业务原文保持原值，字体候选与引擎由 UILib 管理。 */
 public final class GtnhCharacterMapping {
     private static final ConfigKey<Boolean> ENABLED =
             new ConfigKey<>("gtnh.mapPrivateCharacters", ConfigCodecs.BOOLEAN, true)
@@ -31,7 +31,7 @@ public final class GtnhCharacterMapping {
         reload();
     }
 
-    /** 只在加载器/资源重载owner读文件；成功校验后一次发布稳定ON/OFF快照。 */
+    /** 加载器或资源重载 owner 读取配置，校验成功后发布稳定 ON/OFF 快照；失败时保留上次快照。 */
     public static void reload() throws IOException {
         if (Thread.currentThread() != owner) throw new IllegalStateException("兼容配置仅限owner线程加载");
         ConfigDocument document;
@@ -46,10 +46,10 @@ public final class GtnhCharacterMapping {
     public static IntUnaryOperator snapshot() { return current; }
 
     /* 原二十项对应 GregTech CustomGlyphs（629e4105）的 registerCustomGlyph 声明，
-     * 由 GTNHLib GlyphReplacements（d6dbd833）登记；ALEPH 对应 U+05D0，不是 U+2135。
-     * 其余十三项是 issue #53 中用户从对比图选定的相似显示替代，不是上游登记关系：
-     * GALAXY 用形似的 U+058D；U+FE56 只替代问号外形，不等价于下标，也不额外缩小/下移。
-     * 硫黄使用普通炼金硫黄 U+1F70D。这里只记录对应事实和已选替代，不复制上游实现或图片。
+     * 由 GTNHLib GlyphReplacements（d6dbd833）登记；ALEPH 对应希伯来字母 U+05D0，U+2135 为数学符号。
+     * 其余十三项采用 issue #53 中用户从对比图选定的相似显示替代，独立于上游登记关系。
+     * GALAXY 用形似的 U+058D；问号用 U+FE56 的普通标点语义与外形，保持字号和基线。
+     * 硫黄使用普通炼金硫黄 U+1F70D；此表记录字符对应关系与显示替代的来源。
      */
     private static int mapped(int cp) {
         switch (cp) {

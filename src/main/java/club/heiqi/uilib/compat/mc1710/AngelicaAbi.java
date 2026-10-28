@@ -2,7 +2,7 @@ package club.heiqi.uilib.compat.mc1710;
 
 import club.heiqi.uilib.compat.mc1710.lwjgl3ify.sdl.SceneNativeInputSupport;
 
-/** 读资源而不提前加载Mixin目标；descriptor决定ABI，版本字符串不代替结构证据。 */
+/** 从 class 资源的 helper descriptor 选择 ABI，目标类由 Mixin 阶段加载；结构失配时报告错误。 */
 public final class AngelicaAbi {
     private AngelicaAbi() {}
     public static String select(ClassLoader loader) {

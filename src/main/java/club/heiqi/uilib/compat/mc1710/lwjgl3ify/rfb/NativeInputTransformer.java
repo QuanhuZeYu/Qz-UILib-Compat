@@ -10,7 +10,7 @@ import com.gtnewhorizons.retrofuturabootstrap.api.ClassNodeHandle;
 import com.gtnewhorizons.retrofuturabootstrap.api.ExtensibleClassLoader;
 import com.gtnewhorizons.retrofuturabootstrap.api.RfbClassTransformer;
 
-/** RFB仍处理LCL_NO_TRANSFORMS，保留LWJGL3ify对org.lwjgl/org.lwjglx的原排除。 */
+/** 在 RFB 的 LCL_NO_TRANSFORMS 阶段接入消费钩子，保留 LWJGL3ify 对 org.lwjgl/org.lwjglx 的原排除。 */
 public final class NativeInputTransformer implements RfbClassTransformer {
     @Override public String id() { return "native-input-order"; }
 

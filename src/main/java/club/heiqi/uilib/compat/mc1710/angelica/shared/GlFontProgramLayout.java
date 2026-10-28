@@ -9,7 +9,7 @@ import static club.heiqi.uilib.host.client.gl.GlTokens.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/** active pack属性映射，不缓存program/packgeneration；未知属性必须诊断而非默认为0。 */
+/** 按当前 pack program 的活动属性建立映射，未知或失配属性明确报错；映射随本次 program 使用。 */
 final class GlFontProgramLayout {
     static final int FLOATS = 33, STRIDE = FLOATS * 4;
 
@@ -53,8 +53,8 @@ final class GlFontProgramLayout {
                 normal = true;
             } else if ("mc_midTexCoord".equals(a.name)
                     && (a.type == GL_FLOAT_VEC2 || a.type == GL_FLOAT_VEC3 || a.type == GL_FLOAT_VEC4)) {
-                // BSL 声明 vec4，Angelica 非 terrain 输入只提供 XY；指针仍绑定两个分量，
-                // 由 GL 补 Z=0、W=1，不能把后续 tangent 字段当成额外 UV 分量。
+                // BSL 声明 vec4，Angelica 非 terrain 输入提供 XY；指针绑定两个分量，
+                // 由 GL 补 Z=0、W=1，后续 tangent 字段保持独立。
                 offset = 19;
                 size = 2;
             } else if ("at_tangent".equals(a.name) && a.type == GL_FLOAT_VEC4) {

@@ -12,7 +12,7 @@ import club.heiqi.uilib.compat.mc1710.angelica.shared.GlFontIrisProducer;
 import club.heiqi.uilib.host.client.gl.GlVertexProducer;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 
-/** MC outer的可选Iris接入；GPU binding由outer注入，缺席查询不创建scope或初始化GL。 */
+/** 为 Minecraft 宿主提供可选 Iris 接入，GL binding 由宿主注入；缺席查询返回 false，活动 pass 才创建 scope。 */
 public final class IrisProgramProvider implements GlProgramProvider {
     private final ClassLoader loader;
     private final GlApi gl;
@@ -34,14 +34,14 @@ public final class IrisProgramProvider implements GlProgramProvider {
         return new GlFontIrisProducer(gl, capacity);
     }
 
-    /** ABI只随本provider的ClassLoader变化；每scope仍从绑定方法读取当前GL上下文。
-     * 在有效Iris pass首次使用时绑定，构造/缺席路径不加载可选宿主。 */
+    /** 同一 ClassLoader 下复用 ABI 入口，每个 scope 仍读取当前 GL 上下文。
+     * 绑定在有效 Iris pass 首次使用时完成，构造与缺席查询保留惰性加载边界。 */
     DrawState drawState() throws ReflectiveOperationException {
         if (drawState == null) drawState = DrawState.bind(loader);
         return drawState;
     }
 
-    /** 只复用成员元数据；pipeline、pass与有效GL值仍由每次调用读取。 */
+    /** 复用成员元数据，pipeline、pass 与有效 GL 值由每次调用读取。 */
     IrisReflectionBindings bindings() throws ReflectiveOperationException {
         if (bindings == null) bindings = new IrisReflectionBindings(loader);
         return bindings;

@@ -5,7 +5,7 @@ import club.heiqi.uilib.host.client.font.compat.OptionalFontHostBridge;
 import club.heiqi.uilib.host.client.font.context.*;
 import club.heiqi.uilib.ui.scene.paint.*;
 
-/** 直接执行生产submit/executeList/proxy；只替换外部录制器端点，不需要GL上下文。 */
+/** 在无窗口环境以替代录制器端点执行生产 submit/executeList/proxy，验证当前矩阵捕获与 recorder/lease 归还。 */
 public final class AngelicaReplayScenario {
     public interface Command { void execute(); void delete(); }
     public static final class Lists {

@@ -7,7 +7,7 @@ plugins { id 'java'; id 'maven-publish' }
 group = 'asia.quanhuzeyu.uilib'
 version = providers.gradleProperty('compatVersion').getOrElse('1.0.0-local.20261021.1')
 if (!(version.toString() ==~ /[A-Za-z0-9][A-Za-z0-9._+-]*/)) throw new GradleException('compatVersion必须是安全文件名与Java版本文本')
-// 保留显式 Maven URL/版本入口；独立构建默认消费本仓下载的 Release Maven ZIP。
+// Maven URL 与版本可显式指定；独立构建默认消费本仓下载的 Release Maven ZIP。
 def uilibVersion = findProperty('uilibVersion')?.toString() ?: '5.0.0-local.selection-20261021.1'
 def hostVersion = findProperty('uilibHostVersion')?.toString() ?: uilibVersion
 def uilibRepository = findProperty('uilibRepository')?.toString() ?: layout.buildDirectory.dir('ci/maven').get().asFile.toURI().toString()
@@ -32,7 +32,7 @@ dependencies {
     compileOnly 'io.github.llamalad7:mixinextras-common:0.5.0'
     rfbApi 'com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches'
     nativeInputHost 'com.github.GTNewHorizons:lwjgl3ify:3.0.31:dev'
-    // 必须读取正式发行 Jar 的真实 descriptor；不能以 dev/API Jar 或缺席路径代替。
+    // 正式发行 Jar 提供真实 descriptor，ABI 验证以这些制品为证据，输入缺失时失败。
     angelica2210Abi 'com.github.GTNewHorizons:Angelica:2.2.10@jar'
     angelica2228Abi 'com.github.GTNewHorizons:Angelica:2.2.28@jar'
     ae21050Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1050-GTNH@jar'
@@ -164,7 +164,7 @@ def abiInputs = [
     ae21080Abi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar',
     unimixinsAbi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/+unimixins-all-1.7.10-0.3.1.jar'
 ]
-// 旧实机入口继续可用；默认始终解析上面的公开正式坐标，缺失即失败。
+// compatPrismRoot 显式选择实例 Jar；默认解析公开正式坐标，真实输入缺失时失败。
 def actualJar = { String name ->
     def prism = providers.gradleProperty('compatPrismRoot')
     def artifact = prism.isPresent() ? file(prism.get() + '/instances/' + abiInputs[name]) : configurations.getByName(name).singleFile
@@ -200,7 +200,7 @@ tasks.register('gtnhCharacterMappingScenario', JavaExec) {
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(8) }
     jvmArgs '-Dfile.encoding=UTF-8'
     maxHeapSize = '1024m'
-    // Java8 Windows不能解析中文绝对classpath，沿宿主同一启动边界转为相对路径。
+    // Java8 Windows 对中文绝对 classpath 的解析有限，沿宿主启动边界将同盘路径转为相对路径。
     doFirst {
         if (System.getProperty('os.name').toLowerCase().contains('win')) {
             def location = workingDir.toPath()
@@ -277,7 +277,7 @@ publishing {
     publications { compat(MavenPublication) { from components.java } }
     repositories { maven { name = 'release'; url = layout.buildDirectory.dir('release-maven') } }
 }
-// 从本次任务输出收集，避免发布 build/libs 中残留的其他版本。
+// 发布资产直接引用本次任务输出，并按当前版本筛选 Maven 目录。
 def releaseMavenZip = tasks.register('releaseMavenZip', Zip) {
     dependsOn 'publishCompatPublicationToReleaseRepository'
     from(layout.buildDirectory.dir('release-maven')) {

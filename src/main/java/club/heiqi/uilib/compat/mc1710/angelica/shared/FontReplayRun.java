@@ -7,8 +7,8 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.util.Objects;
 
-/** 已知延期范围内相邻同来源文字的逻辑批次；只持plan，不持Prepared、UV或GL scope。
- * 首ticket执行整个run，后续ticket仍各自保有lease及顺序位置，归队列独立释放。 */
+/** 将已知延期范围内的相邻同来源文字组成逻辑批次，保存 plan、context 与来源快照。
+ * Prepared、UV 和 GL scope 在回放时取得；首 ticket 执行整个 run，各 ticket 保留顺序位置与 lease，lease 由队列独立释放。 */
 final class FontReplayRun implements Runnable {
     private static final int MAX_COMMANDS = 4096;
     private final ReplaySink sink;
@@ -46,7 +46,7 @@ final class FontReplayRun implements Runnable {
                 && FontReplayCompatibility.same(this.context, context, this.source, source);
     }
 
-    /** 入队前分配节点，成功转移lease后append只链接已验证节点，不再分配容器。 */
+    /** 入队前分配节点，lease 转移成功后 append 直接链接已验证节点。 */
     static final class Addition {
         final PaintPlan plan;
         final int commandCount;
@@ -71,7 +71,7 @@ final class FontReplayRun implements Runnable {
     public void run() {
         Addition plans = first;
         if (plans == null) throw new IllegalStateException("font run不能重复回放");
-        // 开始即封闭，异常及回放后的追加同样会被拒绝；局部链只活到本次draw退出。
+        // 回放开始即封闭追加入口，异常后也保持封闭；局部计划链随本次 draw 退出释放。
         cancel();
         PaintPlan merged;
         if (plans.next == null) {
@@ -86,7 +86,7 @@ final class FontReplayRun implements Runnable {
         HostProgramSnapshot.replay(source, () -> sink.draw(merged, context));
     }
 
-    /** 只丢弃逻辑载荷；source lease仍唯一归原队列ticket，不在run里释放。 */
+    /** 丢弃逻辑载荷，source lease 继续由原队列 ticket 唯一持有并释放。 */
     void cancel() {
         first = last = null;
         commandCount = 0;

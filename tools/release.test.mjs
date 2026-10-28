@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-// 只替换 gh 远端；完整执行生产脚本，检查创建/重跑/失败时的实际命令顺序。
+// 以替代 gh 端点完整执行生产脚本，核对创建、重跑与失败时的实际命令顺序。
 function fixture(t, { existing = false, viewFailure = false, uploadFailure = false } = {}) {
     const directory = mkdtempSync(join(tmpdir(), 'compat-release-test-'));
     t.after(() => rmSync(directory, { recursive: true, force: true }));

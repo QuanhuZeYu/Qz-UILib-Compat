@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 
-/** 真实YAML→正式SPI→原版共用解析→FT/HB测绘，无Minecraft类、窗口或GL。 */
+/** 在隔离 Minecraft/GL 的无窗口环境中，沿真实 YAML → 正式 SPI → 原版共用解析 → FT/HB 验证测绘。 */
 public final class GtnhCharacterMappingScenario extends TestApplication {
     // 原二十项来自上游 CustomGlyphs 明确登记；其余十三项来自 issue #53 用户选定的相似替代。
     private static final int[][] EXPECTED = {
@@ -82,7 +82,7 @@ public final class GtnhCharacterMappingScenario extends TestApplication {
         require(workerFailure.get() instanceof IllegalStateException, "非owner发布了配置快照");
         write(true); extension.resourcesReloaded();
         require(MinecraftHostExtensions.textMapping() == on, "重新启用没有复用稳定ON快照");
-        // 此运行类路径不含Minecraft客户端；共同配置/Mod入口仍能加载。
+        // 验证共同配置/Mod 入口可在隔离 Minecraft 客户端的类路径中加载。
         Class.forName("club.heiqi.uilib.compat.CompatMod");
         System.out.println("GTNH_MAPPING_CONFIG default=true reload=true stableSnapshots=true invalidPreserved=true owner=true noMinecraft=true");
     }
@@ -111,7 +111,7 @@ public final class GtnhCharacterMappingScenario extends TestApplication {
     }
 
     private static void supplementarySources(VanillaTextService text, Settings enabled, Settings disabled) {
-        // 真实GTNH输入由一个BMP私用字符展开为supplementary；消费原版同一测宽/裁剪/换行入口。
+        // GTNH 的 BMP 私用字符映射为 supplementary 码点，沿原版共用入口验证测宽、裁剪与换行的原文范围。
         for (int[] pair : new int[][] {{0xE000, 0x1F701}, {0xE00E, 0x1F9F2}}) {
             String pua = new String(Character.toChars(pair[0]));
             String standard = new String(Character.toChars(pair[1]));

@@ -5,8 +5,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
 
-/** 同一provider拥有稳定成员，短scope只读取本次宿主值；不保存pipeline或GL状态。
- * 查询、world类型和active scope分阶段绑定，缺席或非活动路径不加载producer依赖。 */
+/** 同一 provider 复用稳定成员元数据，短 scope 按次读取 pipeline 与 GL 状态。
+ * 查询、world 类型和活动 scope 分阶段绑定，producer 依赖随活动 scope 加载。 */
 final class IrisReflectionBindings {
     private final ClassLoader loader;
     private final Method getManager;
@@ -133,7 +133,7 @@ final class IrisReflectionBindings {
         float[] normal() throws ReflectiveOperationException {
             Object current = getNormal.invoke(null);
             Normal binding = normal;
-            // 只按实际类型复用字段，normal对象和值仍属于当前scope。
+            // 字段访问器按实际类型复用，normal 对象和值仍属于当前 scope。
             if (binding == null || binding.type != current.getClass()) {
                 binding = new Normal(current.getClass());
                 normal = binding;

@@ -37,8 +37,8 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 用真实 SDL 事实缓冲执行生产消费 hook/桥和正式 Session；默认不创建窗口或设备。
- * window 参数只保留显式真实 SDL 文本生命周期入口，设备验收另行授权。 */
+/** 默认在无窗口环境用真实 SDL 事件缓冲执行生产消费 hook/桥与正式 Session。
+ * window 参数进入隐藏 SDL 窗口的文本启停场景，设备生命周期验收采用显式授权。 */
 public final class SdlTextInputScenario extends TestApplication {
     public static int windowId = 71, begins, ends;
     public static SDL_Event currentEvent;
@@ -108,7 +108,7 @@ public final class SdlTextInputScenario extends TestApplication {
         System.out.println("SDL_CONSUMER_BINDING actualDescriptor=()Z publicStatic=true eventSlot=SDL_Event missingMethodDiagnosed=true");
     }
 
-    /** 仅替换窗口事实及 begin/end 边界；Bindings 的实际 SDL 解析和宿主键映射均走生产实现。 */
+    /** 提供窗口、事件槽、线程调度和启停/泵事件边界；Bindings 的 SDL 结构解析与宿主键映射执行生产实现。 */
     private final class NativeEnvironment implements AutoCloseable {
         final Lwjgl3ifyTextInput bridge = new Lwjgl3ifyTextInput();
         final Method hook;
@@ -266,7 +266,7 @@ public final class SdlTextInputScenario extends TestApplication {
             club.heiqi.uilib.ui.scene.layout.LayoutBox[] targetBox = {null};
             domain.execute(() -> targetBox[0] = page.pipeline().current().geometry.get(fields[1]).box);
             club.heiqi.uilib.ui.scene.layout.LayoutBox box = targetBox[0];
-            // 真实SDL坐标经生产桥缩放，指针与COMMIT在同一次drain中交给原会话。
+            // SDL 坐标经生产桥缩放，指针与 COMMIT 按消费顺序在同一次 drain 中交给原会话。
             try (Input pointer = new Input(SDL_EVENT_MOUSE_BUTTON_DOWN, null)) {
                 pointer.event.button().x((box.x + 8) / scale()).y((box.y + 8) / scale());
                 nativeInput.capture(pointer);
@@ -326,7 +326,7 @@ public final class SdlTextInputScenario extends TestApplication {
                 require(boundary.size() == 1 && boundary.get(0).edit == null && boundary.get(0).down,
                         "原生start前旧文本进入新session，或键事实被全局flush丢弃");
             }
-            // SDL_StopTextInput没有最终TEXT_INPUT承诺；真实新组字不能等一个不存在的旧提交。
+            // SDL_StopTextInput 的提交以实际 TEXT_INPUT 为准；重启后的首轮组字立即建立新来源。
             nativeInput.input(SDL_EVENT_TEXT_EDITING, "xin");
             nativeInput.input(SDL_EVENT_TEXT_INPUT, "新中文");
             List<NativeEvent> fresh = nativeInput.bridge.drain();
@@ -356,7 +356,7 @@ public final class SdlTextInputScenario extends TestApplication {
                 nativeInput.bridge.textInput(false);
                 require(!SDL_TextInputActive(window), "SDL文本输入未停止");
                 nativeInput.bridge.drain();
-                // 真实Stop没有产生任何最终提交，下一次Start仍须立即接受全新来源。
+                // 覆盖 Stop 后最终提交缺席的路径，验证下一次 Start 立即接受全新来源。
                 nativeInput.bridge.textInput(true);
                 nativeInput.input(SDL_EVENT_TEXT_EDITING, "xin");
                 nativeInput.input(SDL_EVENT_TEXT_INPUT, "新中文");

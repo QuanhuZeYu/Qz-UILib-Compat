@@ -15,10 +15,10 @@ import java.util.Collections;
 import java.util.List;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 
-/** Iris pack program与Pass.use真实scope；不生成任何quad、不调用Tessellator。
- * producer必须使用自己的VAO/VBO，并依据requiredAttributes给完整vertex ABI。
- * shaderpack标准sampler2D要求STRAIGHT_RGBA采样view，不能重解释共享premult页。
- * 若无world pipeline返回null；存在且ABI错误明确失败。scope只在有效宿主GL线程短期使用。 */
+/** 在宿主 GL 线程短期管理 Iris pack program 与 Pass.use，几何由自有 producer 提供。
+ * producer 使用自有 VAO/VBO，并按 requiredAttributes 提供完整 vertex ABI。
+ * shaderpack 的标准 sampler2D 使用 STRAIGHT_RGBA view，共享 premult 页保留原采样语义。
+ * world pipeline 缺席时返回 null，宿主存在且 ABI 失配时明确失败。 */
 public final class OptionalIrisProgramScope implements GlProgramScope {
     public enum SamplingView {
         STRAIGHT_RGBA
@@ -52,7 +52,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
     private final SourceExtendedAttributes sourceExtended;
     private final DrawState drawState;
 
-    /** prepare选择Atlas view前只读查询，不改inputs/pass/program/FBO。null表示没有Iris world pass。 */
+    /** prepare 选择 atlas view 前读取活动 pass，保留 inputs/pass/program/FBO；null 表示 Iris world pass 缺席。 */
     public static SamplingView preview(ClassLoader loader, FontRenderContext context) {
         return preview(loader, context, null);
     }
@@ -124,7 +124,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         setTranslucency = bindings.setTranslucency;
         rebind = bindings.rebind;
         getProgram = bindings.getProgram;
-        // 成员跨scope复用，当前pass的输入、phase和program仍逐次读取。
+        // 成员跨 scope 复用，当前 pass 的输入、phase 和 program 仍逐次读取。
         oldInputs = bindings.inputs.get(pipeline);
         oldTranslucency = bindings.translucent.get(pipeline);
         oldPhase = getPhase.invoke(pipeline);
@@ -149,8 +149,8 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             programId =
                     ((Number) getProgram.invoke(pipeline)).intValue();
             if (programId <= 0) throw new IllegalStateException("Iris当前font pass没有可提交program");
-            // Pass.use 按实际 program 的 draw buffers 和 before/after 阶段绑定目标。
-            // 历史 caller 可以使用另一 FBO；保留 Iris 的选择，不以句柄相同误拒绝合法回放。
+            // Pass.use 按实际 program 的 draw buffers 与 before/after 阶段绑定目标。
+            // 历史 caller 可使用另一 FBO，回放目标遵循 Iris 当前选择。
             List<Attribute> attributes = new ArrayList<Attribute>();
             int count = gl.glGetProgrami(programId, GlTokens.GL_ACTIVE_ATTRIBUTES);
             for (int i = 0; i < count; i++) {
@@ -225,7 +225,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         return normal.clone();
     }
 
-    /** 来源时间冻结的FFP generic属性；延期回放不会读取当前mesh属性。 */
+    /** 返回来源时刻冻结的 FFP generic 属性，延期回放继续使用该快照。 */
     public SourceExtendedAttributes freezeSourceExtendedAttributes() {
         if (sourceExtended == null) throw new IllegalStateException("缺少来源FFP extended属性");
         return sourceExtended;
@@ -244,7 +244,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         producer.bindTexture2D(texture);
     }
 
-    /** 在任何raw producer绑定前调用；pointer注册及enable必须随后使用返回scope。 */
+    /** 在首次 raw producer 绑定前调用，随后通过返回的 scope 注册 pointer 与 enable，保持宿主缓存同步。 */
     public ProducerStateScope configureProducer(
             int vao,
             int vbo,
@@ -258,7 +258,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         return producer;
     }
 
-    /** typedattrs来自实际active属性匹配，遗漏/未知必须由producer明确拒绝，不能补猜测默认值。 */
+    /** producer 按活动属性校验类型与语义并提供 typed 列表；此入口核对 location 覆盖，缺失时明确失败。 */
     public void bindProducerAttributes(
             int vao,
             int vbo,
@@ -279,8 +279,8 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
             producer.attribute(attribute);
     }
 
-    /** producer完成VAO/effective flags同步后调用，刷新当前宿主兼容uniform/扩展属性。
-     * 不代替producer设置midUV/entity/tangent，不能只凭此就宣称全pack ABI通过。 */
+    /** producer 同步 VAO 与有效 flags 后调用，以宿主 preDraw 刷新兼容 uniform/扩展状态。
+     * midUV/entity/tangent 由 producer 提供；完整 pack ABI 由实际活动属性与来源值共同验证。 */
     public void beforeDraw() {
         if (closed) throw new IllegalStateException("Iris program scope已关闭");
         try {
@@ -301,7 +301,7 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
     }
 
     private Throwable restore(Throwable failure) {
-        // pass各项均归此scope归还；某个setter失败也不能略过余项或最后的rebind。
+        // scope 逐项归还 pass 状态，单项失败后继续其余 setter 与最终 rebind，并收集清理错误。
         try { setPhase.invoke(pipeline, oldPhase); }
         catch (ReflectiveOperationException | RuntimeException | Error error) {
             failure = cleanupFailure(failure, error);

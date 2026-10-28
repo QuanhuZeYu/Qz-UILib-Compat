@@ -10,7 +10,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import org.lwjgl.system.MemoryUtil;
 
-/** 实际 Pass 方法体 + 生产共享 backend/producer 的目标像素验证；隔离 MC 初始化，不冒称完整游戏。 */
+/** 用实际 Pass 方法体与生产共享 backend/producer 验证目标像素和异常恢复；完整 Minecraft/Iris 装配由游戏实机验证覆盖。 */
 public final class IrisPassTargetGlScenario {
     private static final int W = 64, H = 48;
     public static void main(String[] jars) throws Exception {
@@ -100,7 +100,7 @@ public final class IrisPassTargetGlScenario {
                         if (fail) throw new IllegalStateException("目标恢复反例");
                     }
                     public void close() {
-                        // 先核对共享 world/scope 已恢复，不能让测试宿主的清理掩盖 backend 的恢复错误。
+                        // 在测试宿主清理前核对共享 world/scope 恢复结果，使 backend 恢复错误直接暴露。
                         int[] viewport = new int[4]; glGetIntegerv(GL_VIEWPORT, viewport);
                         require(glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) == 0
                                 && glGetInteger(GL_CURRENT_PROGRAM) == 0
@@ -108,7 +108,7 @@ public final class IrisPassTargetGlScenario {
                                 && glGetInteger(GL_DEPTH_FUNC) == GL_GEQUAL
                                 && glGetBoolean(GL_DEPTH_WRITEMASK) && glIsEnabled(GL_DEPTH_TEST),
                                 "宿主 close 前共享 backend 尚未恢复入口状态");
-                        // 宿主 scope 为测试边界；真实 OptionalIrisProgramScope 的缓存恢复仍由游戏验收。
+                        // 此处替换宿主 scope；真实 OptionalIrisProgramScope 在有效宿主上的缓存恢复由游戏验收。
                         glBindFramebuffer(GL_FRAMEBUFFER, 0); glUseProgram(0);
                     }
                 };

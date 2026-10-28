@@ -13,9 +13,9 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.commons.*;
 import org.objectweb.asm.tree.*;
 
-/** 实际 Jar 的 Pass.use/useNow 执行体；仅替换不能在独立 GL 场景初始化的宿主类型。
- * FBO/program/viewport 调用进入真实 GL，目标选择分支完整保留。此夹具不初始化 Minecraft，
- * 不验证 pack 编译、pipeline 匹配、display-list 延期或非空 alpha/blend override。 */
+/** 提取实际 Jar 的 Pass.use/useNow 执行体，通过类型映射提供独立 GL 场景的宿主边界。
+ * FBO/program/viewport 调用进入真实 GL，保留完整目标选择分支；场景固定为空 override 与 Instancing.NONE。
+ * Minecraft 初始化、pack 编译、pipeline 匹配、display-list 延期及非空 alpha/blend override 由游戏实机验证覆盖。 */
 public final class ActualIrisPass {
     private static final String PIPELINE = "net/coderbot/iris/pipeline/DeferredWorldRenderingPipeline";
     private static final String PASS = PIPELINE + "$Pass";
@@ -162,7 +162,7 @@ public final class ActualIrisPass {
         public static MinecraftFixture func_71410_x() { return Objects.requireNonNull(current, "MC 尺寸边界未设置"); }
         public Dimensions func_147110_a() { return framebuffer; }
     }
-    /** 本场景没有 override 或锁；restore/unlock 为明确的空边界，apply 不允许静默通过。 */
+    /** 场景固定为空 override 与解锁状态；restore/unlock 为空操作，非空 apply 明确报错。 */
     public static final class UnsupportedOverride {
         public void apply() { throw new AssertionError("未覆盖非空 alpha/blend override"); }
         public static void restore() { }
@@ -170,10 +170,10 @@ public final class ActualIrisPass {
     public static final class DrawBoundary {
         public static void unlockDepthColor() { }
         public static void glViewport(int x, int y, int width, int height) { org.lwjgl.opengl.GL32C.glViewport(x, y, width, height); }
-        // 独立 GL 测试没有 display list；只测试立即执行的 Pass 路由。
+        // 独立 GL 场景立即执行 Pass 路由，display-list 延期由游戏场景验证。
         public static void runProgramTransition(Runnable transition) { transition.run(); }
     }
-    /** pack 的 custom uniform 求值不属于本场景；push 调用本身仍由真实方法体触发。 */
+    /** 真实方法体触发 push，此处校验 owner；pack 的 custom uniform 求值由游戏场景验证。 */
     public static final class UniformsFixture {
         public void push(Object owner) { Objects.requireNonNull(owner, "Pass uniform owner"); }
     }

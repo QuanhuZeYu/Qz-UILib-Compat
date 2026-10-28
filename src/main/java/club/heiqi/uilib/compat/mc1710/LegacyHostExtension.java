@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.host.minecraft.SceneNativeTextInput;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.*;
 import club.heiqi.uilib.compat.mc1710.lwjgl3ify.sdl.Lwjgl3ifyTextInput;
 
-/** 服务构造不解析目标Mod；只有目标资源和所需ABI已确认才创建专属适配器。 */
+/** 按目标资源选择可选端口，所需 ABI 在各绑定边界校验；目标缺席时返回空端口，由宿主使用基础路径。 */
 public final class LegacyHostExtension implements MinecraftHostExtension {
     public java.util.function.IntUnaryOperator textMapping() {
         return club.heiqi.uilib.compat.mc1710.gtnh.GtnhCharacterMapping.snapshot();

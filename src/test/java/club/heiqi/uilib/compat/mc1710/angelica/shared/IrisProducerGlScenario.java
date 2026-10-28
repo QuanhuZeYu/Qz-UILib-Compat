@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
 import static org.lwjgl.opengl.GL32C.*;
 
-/** 仅合成activeprogram验证production emitter字节/像素合同，不宣称实际Iris engine初始化通过。 */
+/** 以合成活动 program 验证生产 producer 的字节与像素合同；完整 Iris 引擎初始化及 pack 装配由游戏实机验证覆盖。 */
 public final class IrisProducerGlScenario {
     private IrisProducerGlScenario() {}
 
@@ -39,7 +39,7 @@ public final class IrisProducerGlScenario {
         int oldVao = glGetInteger(GL_VERTEX_ARRAY_BINDING),
                 oldVbo = glGetInteger(GL_ARRAY_BUFFER_BINDING),
                 oldProgram = glGetInteger(GL_CURRENT_PROGRAM);
-        // 这是world应用具名case复用的producer探针；不是独立空应用。
+        // world 应用的具名 case 复用此 producer 探针与当前 GL 场景。
         final int[] resources = new int[3];
         try (AutoCloseable cleanup =
                 () -> {
@@ -50,7 +50,7 @@ public final class IrisProducerGlScenario {
                     glDeleteShader(resources[0]);
                     glDeleteShader(resources[1]);
                 }) {
-            // BSL 的 midUV 声明为 vec4，宿主仍只提供 XY；GL 按标准补 Z=0、W=1。
+            // BSL 的 midUV 声明为 vec4，宿主提供 XY，GL 按标准补 Z=0、W=1。
             String mid = dimensions == 2 ? "vec4(mc_midTexCoord,0.0,1.0)"
                     : dimensions == 3 ? "vec4(mc_midTexCoord,1.0)" : "mc_midTexCoord";
             String vertex = "#version 150\nin vec4 position,color,uv0,uv1;in vec3 normal;"
@@ -165,7 +165,7 @@ public final class IrisProducerGlScenario {
                             glBindTexture(GL_TEXTURE_2D, texture);
                         }
                     };
-            // 从MC正式装配工厂取得中性提交端口，像素验收同时覆盖分包后的实现接线。
+            // 从 Compat 的 IrisProgramProvider 创建生产 producer，像素验证同时覆盖中性提交端口的接线。
             final GlApi api = new Lwjgl3GlApi();
             final GlProgramProvider provider =
                     new club.heiqi.uilib.compat.mc1710.angelica.shared.IrisProgramProvider(
@@ -254,7 +254,7 @@ public final class IrisProducerGlScenario {
         }
     }
 
-    /** 只捕获production producer上传的字节；不创建GL上下文或声称shader采样结果。 */
+    /** 通过替代 GlApi 捕获生产 producer 的上传字节，验证坐标、UV 与批次提交；shader 采样由 run 的 GL 场景覆盖。 */
     private static void pureBatch() {
         final ByteBuffer[] uploaded = {null};
         final int[] generated = {0}, draws = {0}, bound = {0};
@@ -351,7 +351,7 @@ public final class IrisProducerGlScenario {
         }
     }
 
-    /** 只替换GLSM/pass端点，执行生产close；不初始化游戏或增加生产测试入口。 */
+    /** 以替代 GLSM/pass 端点执行生产 close，验证清理顺序、错误保留与幂等关闭。 */
     public static final class CleanupHost implements DrawState {
         static CleanupHost current;
         final List<String> calls = new ArrayList<>();
@@ -411,7 +411,7 @@ public final class IrisProducerGlScenario {
                     return null;
                 });
         put(producer, "gl", api);
-        // 保持GLSM static端点形态，method.invoke仍走生产边界。
+        // 保持 GLSM static 端点形态，method.invoke 仍走生产边界。
         CleanupHost.current = host;
         put(producer, "captured", host);
         put(producer, "oldProjection", new float[16]);

@@ -44,8 +44,8 @@ import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import static org.lwjgl.opengl.GL32C.*;
 
-/** 正式字体→owned worker→budget atlas→PaintPlan→GL读回，无MC、无JUnit。
- * 软件只合成生产 native 位图；模拟GL_LINEAR透明padding和RGBA8逐次混合，容差3/255。
+/** 在独立 TestApplication 中验证正式字体 → owned worker → budget atlas → PaintPlan → GL 读回。
+ * 软件参照合成生产 native 位图，模拟 GL_LINEAR 透明 padding 与 RGBA8 逐次混合，容差 3/255。
  */
 public final class GlyphPipelineScenario extends TestApplication {
     private static final int W = 640, H = 280, TOLERANCE = 3;
@@ -441,7 +441,7 @@ public final class GlyphPipelineScenario extends TestApplication {
                         compare(name + " final", reference, finalPixels);
                         image(new File(output, name + "-final.png"), finalPixels);
                         image(new File(output, name + "-software.png"), reference);
-                        // 明确外部委托屏障：退出并恢复宿主状态后委托，再继续原序范围。
+                        // 委托边界先退出并恢复宿主状态，委托完成后继续原顺序回放。
                         clear();
                         try (GlPaintPlanRenderer.Replay replay = prepared.begin(MVP, H, false)) {
                             int i = 0;
@@ -519,7 +519,7 @@ public final class GlyphPipelineScenario extends TestApplication {
         }
     }
 
-    /** 公开 Texture(target,id) 保留 RGBA alpha 语义，red 与 alpha 特意不同。 */
+    /** 以不同的 red 与 alpha 值验证公开 Texture(target,id) 的 RGBA alpha 采样语义。 */
     private static void externalRgbaCoverage(GlGlyphAtlas.Mode mode) {
         int target = mode == GlGlyphAtlas.Mode.TEXTURE_2D ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY;
         int texture = glGenTextures();
@@ -568,7 +568,7 @@ public final class GlyphPipelineScenario extends TestApplication {
                         new OrderedQuadBatch.Quad(0, 0, 8, 8, 0, 0, 1, 1, 0, 0xffffffff));
                 collector.flush();
             }
-            // readback 返回独立 RGBA 通道，不是打包像素。
+            // readback 按独立 RGBA 通道返回数值。
             int[] actual = readback();
             String rgba = Arrays.toString(Arrays.copyOf(actual, 4));
             System.out.println(mode + " externalRgbaMono actual=" + rgba
@@ -596,7 +596,7 @@ public final class GlyphPipelineScenario extends TestApplication {
         }
     }
 
-    /** 标准宿主只做 texture(image, uv)*color；顶点仍由正式 PaintPlan/backend/producer 输出。 */
+    /** 标准宿主执行 texture(image, uv)*color，顶点由正式 PaintPlan/backend/producer 输出。 */
     private void straightShader(AsyncGlyphRasterizer cpu, GlGlyphAtlas atlas, PaintPlan original,
             File output, String name) throws Exception {
         int vertex = 0, fragment = 0, program = 0;
@@ -695,7 +695,7 @@ public final class GlyphPipelineScenario extends TestApplication {
         }
     }
 
-    /** 驱动查询留在真实场景中，生产不暴露纹理内部格式测试钩子。 */
+    /** 在真实 GL 场景直接查询 driver，核对生产纹理的内部格式、覆盖率通道与预算。 */
     private static void formats(
             GlGlyphAtlas.Mode mode, PaintPlan plan, GlPaintPlanRenderer.Prepared prepared,
             AsyncGlyphRasterizer cpu, GlGlyphAtlas atlas) {
@@ -754,7 +754,7 @@ public final class GlyphPipelineScenario extends TestApplication {
         throw new AssertionError("没有非四字节对齐的真实 mono 行");
     }
 
-    /** 同一个 mono 的两个 view 交替上传，预算每次只容纳一个实际格式行。 */
+    /** 同一 mono 的两个 view 交替上传，每次预算容纳一个实际格式行，验证逐行推进与发布时机。 */
     private static void rowBudget(AsyncGlyphRasterizer cpu, PaintPlan plan, GlGlyphAtlas.Mode mode) {
         GlyphKey key = monoKey(cpu, plan);
         GlyphBitmap bitmap = cpu.peek(key);
@@ -812,7 +812,7 @@ public final class GlyphPipelineScenario extends TestApplication {
         }
     }
 
-    /** byte 预算容纳真实 coverage，却容不下旧的 RGBA 扩展，不能只验证 entry 上限。 */
+    /** 按真实 coverage 设置精确 byte 预算，验证 CPU 位图的实际存储成本。 */
     private void monoCpuBytes(AsyncGlyphRasterizer reference, PaintPlan plan) throws Exception {
         GlyphKey key = monoKey(reference, plan);
         int bytes = reference.peek(key).byteSize();

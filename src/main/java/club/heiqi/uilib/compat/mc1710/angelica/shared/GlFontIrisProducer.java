@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/** 有界自有vertex/index producer；program与uniform仍由active Iris Pass.use/宿主preDraw拥有。 */
+/** 按有界 staging 输出顶点和索引，创建并释放自有 VAO/VBO/EBO；program 与 uniform 由活动 Iris Pass.use/宿主 preDraw 管理。 */
 public final class GlFontIrisProducer implements GlVertexProducer {
     private final GlApi gl;
     private int vao, vbo, ebo;
@@ -84,7 +84,7 @@ public final class GlFontIrisProducer implements GlVertexProducer {
             for (int i = draw.firstQuad; i < draw.firstQuad + draw.quadCount; i++) {
                 Quad q = batch.quads().get(i);
                 boolean emoji = draw.state.material == GlQuadRenderer.COLOR_PREMULT;
-                // 形状裁剪后的UV已逐顶点插值，旧矩形边界不能重建这些采样位置。
+                // 使用形状裁剪后逐顶点插值的 UV，保留裁剪几何对应的采样位置。
                 vertex(q, q.x0, q.y0, q.s0, q.t0, emoji, alpha, normal, entity, midBlock, scope);
                 vertex(q, q.x1, q.y1, q.s1, q.t1, emoji, alpha, normal, entity, midBlock, scope);
                 vertex(q, q.x2, q.y2, q.s2, q.t2, emoji, alpha, normal, entity, midBlock, scope);
@@ -131,7 +131,7 @@ public final class GlFontIrisProducer implements GlVertexProducer {
                 .putFloat(emoji ? 1 : (q.color & 255) / 255f)
                 .putFloat((q.color >>> 24) / 255f * alpha);
         staging.putFloat(u).putFloat(v).putFloat(0).putFloat(1);
-        // UV1原始packedbrightness在shader中只通过捕获的unit1 matrix转换一次。
+        // UV1 保留原始 packed brightness，由 shader 通过已捕获的 unit1 matrix 转换一次。
         staging.putFloat(scope.packedLight() & 65535)
                 .putFloat(scope.packedLight() >>> 16 & 65535)
                 .putFloat(0)
@@ -139,9 +139,9 @@ public final class GlFontIrisProducer implements GlVertexProducer {
         for (int i = 0; i < 3; i++) staging.putFloat(normal[i]);
         staging.putFloat((q.s0 + q.s1 + q.s2 + q.s3) * 0.25f)
                 .putFloat((q.t0 + q.t1 + q.t2 + q.t3) * 0.25f);
-        // quad caller平面的切向是+X，handedness为+1；宿主normal matrix处理到目标空间。
+        // quad 的 caller 平面切向为 +X、handedness 为 +1，宿主 normal matrix 将其转换到目标空间。
         staging.putFloat(1).putFloat(0).putFloat(0).putFloat(1);
-        // 仅shader实际声明的known扩展字段读来源generic4；未声明的padding不充当unknown fallback。
+        // 已声明的已知扩展字段读取来源 generic4，其余零值仅作 staging padding；未知属性由 layout 拒绝。
         for (int i = 0; i < 4; i++) staging.putFloat(entity == null ? 0 : entity[i]);
         for (int i = 0; i < 4; i++) staging.putFloat(midBlock == null ? 0 : midBlock[i]);
     }

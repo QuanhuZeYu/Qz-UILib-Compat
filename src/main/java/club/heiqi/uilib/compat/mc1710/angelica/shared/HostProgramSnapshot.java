@@ -6,8 +6,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
 
-/** 延期计划的shader来源；保pipeline身份/pack代际/phase，不持program或UV。
- * 回放不能跨pack reload；旧context不能强行选回已销毁的FBO/program。 */
+/** 保存延期计划的 pipeline 身份、pack 代际、phase 与来源值；program 和 UV 在回放时取得。
+ * pipeline 或 pack 换代时拒绝旧计划，确保回放使用当前存活的 FBO/program。 */
 final class HostProgramSnapshot {
     private static final ThreadLocal<HostProgramSnapshot> CURRENT = new ThreadLocal<>();
     final Object pipeline, phase;
@@ -32,8 +32,8 @@ final class HostProgramSnapshot {
         this.extended = extended;
     }
 
-    /** 稳定成员归bridge/provider所有；不保存manager、纹理状态或当前渲染对象。
-     * class身份变化时只重绑该对象的访问器，所有来源事实仍在每次capture时读取。 */
+    /** bridge/provider 复用稳定成员元数据，manager、纹理状态与渲染对象在每次 capture 时读取。
+     * class 身份变化时重绑对应访问器，保持来源事实随宿主更新。 */
     static final class Capture {
         private final ClassLoader loader;
         private final GlApi gl;
@@ -144,7 +144,7 @@ final class HostProgramSnapshot {
 
         private void validate(HostProgramSnapshot snapshot) {
             try {
-                // 回放只验证失效边界；不能再次采集/分配随后丢弃的矩阵与extended属性。
+                // 回放验证 pipeline 与 pack 的有效性；矩阵和 extended 属性继续使用已捕获的来源值。
                 if (pipeline() != snapshot.pipeline
                         || ((Number) getGeneration.invoke(null)).intValue() != snapshot.generation)
                     throw new IllegalStateException(

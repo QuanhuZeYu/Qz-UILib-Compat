@@ -4,7 +4,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-/** 只读取可选宿主的 class 资源，插件选择与页面绑定使用同一消费前提，不提前加载目标类。 */
+/** 从可选宿主的 class 资源核对消费前提，供插件选择与页面绑定共用；目标类在绑定阶段加载。 */
 public final class SceneNativeInputSupport {
     private SceneNativeInputSupport() {}
 
@@ -31,7 +31,7 @@ public final class SceneNativeInputSupport {
         }
     }
 
-    /** 读取 class 文件的 UTF 常量与成员表；不依赖旧宿主 ASM 对 Java25 字节码的支持。 */
+    /** 直接读取 class 的 UTF 常量与成员表，以兼容超出旧宿主 ASM 支持范围的 Java25 字节码。 */
     public static boolean member(ClassLoader loader, String path, boolean method,
             String name, String descriptor, int requiredAccess) throws IOException {
         InputStream resource = loader.getResourceAsStream(path);

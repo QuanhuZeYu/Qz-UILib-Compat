@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** 宿主真实complex opcode位置回放。compile不锁atlas，playback重新capture，delete释放source lease。 */
+/** 在宿主 complex opcode 位置回放；编译保存逻辑 plan 与 source lease，回放重新捕获状态并申请字形，delete 释放 lease。 */
 final class DisplayListFontCommand implements InvocationHandler {
     private AngelicaBridge host;
     private PaintPlan plan;

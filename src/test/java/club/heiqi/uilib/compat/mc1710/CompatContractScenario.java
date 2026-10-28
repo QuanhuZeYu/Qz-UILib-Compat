@@ -14,7 +14,8 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 import java.nio.*;
 
-/** 实际Jar只读ABI与缺席加载；AE2反例执行生产Mixin方法体，仅替换外部配置投影。 */
+/** 以正式 Jar 校验 ABI、缺席加载与真实输入状态创建；header 投影验证生产状态查询和快照边界。
+ * AE2 场景执行生产 Mixin 方法体，外部配置由场景投影提供。 */
 public final class CompatContractScenario {
     public static final class Projection {
         public static boolean enabled;
@@ -273,7 +274,7 @@ public final class CompatContractScenario {
         }
     }
 
-    /** 直接执行实际 Jar 的输入状态创建；header 替身无法验证枚举工厂与字段值。 */
+    /** 直接执行实际 Jar 的输入状态创建，验证枚举工厂、字段值与编码；header 场景负责成员绑定。 */
     private static void actualIrisInputs(String angelica, String expected) throws Exception {
         try (URLClassLoader actual = new URLClassLoader(new URL[] {new File(angelica).toURI().toURL()}, getLoader())) {
             Class<?> inputs = actual.loadClass("net.coderbot.iris.gbuffer_overrides.matching.InputAvailability");

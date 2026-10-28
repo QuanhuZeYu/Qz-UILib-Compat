@@ -4,7 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import club.heiqi.uilib.compat.mc1710.angelica.shared.LightmapState;
 
-/** 2.2.10的亮度在GLSMConfig静态字段，GLContextState尚未持有它们。 */
+/** 2.2.10 的亮度来源为 GLSMConfig 静态字段及 packedLastBrightness。 */
 public final class LightmapState2210 implements LightmapState {
     private final Field x, y;
     private final Method packed;

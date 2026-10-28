@@ -4,11 +4,11 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 import java.util.Arrays;
 
-/** 固定Angelica 2.2.10非terrain字体的来源generic值副本；没有atlas、VAO或nativebuffer引用。
- * GbufferPrograms.setBlockEntityDefaults实际写attr11=(-1,-1,0,1)、attr14=(0,0,0,0)。
- * ImmediateExtendedAttribHandler只生成12/midUV、13/tangent；entity/item/block ID属于uniform，不能填作mc_Entity。
- * 这里捕实际来源current value，未使用没有来源的block center推算。terrain的uint packedmcEntity是另一ABI。
- * generic setter在GLSM直达backend，无独立logicalcache，glGetVertexAttribfv是该来源事实的读取。 */
+/** 保存 Angelica 非 terrain 字体的 FFP generic 来源值副本，atlas、VAO 与 native buffer 由各自 owner 管理。
+ * GbufferPrograms.setBlockEntityDefaults 写入 attr11=(-1,-1,0,1)、attr14=(0,0,0,0)。
+ * ImmediateExtendedAttribHandler 生成 12/midUV、13/tangent；entity/item/block ID 归 uniform，mc_Entity 保留来源 current value。
+ * at_midBlock 同样读取来源 current value；terrain 的 uint packed mcEntity 使用独立 ABI。
+ * GLSM generic setter 直达 backend，因此 glGetVertexAttribfv 提供实际来源事实。 */
 public final class SourceExtendedAttributes {
     private final float[] mcEntity, midBlock;
 
@@ -34,7 +34,7 @@ public final class SourceExtendedAttributes {
         return values;
     }
 
-    /** 仅比较已捕获的有限值，不复制数组或读取当前GL。 */
+    /** 直接比较已捕获的有限来源值。 */
     boolean sameValues(SourceExtendedAttributes other) {
         return other != null && Arrays.equals(mcEntity, other.mcEntity)
                 && Arrays.equals(midBlock, other.midBlock);
@@ -48,7 +48,7 @@ public final class SourceExtendedAttributes {
         return midBlock.clone();
     }
 
-    /** 仅匹配实际FFP浮点ABI；uint/ivec packedterrain以及额外属性须明确来源协议，不能猜值。 */
+    /** 按 FFP 浮点 ABI 提供已知来源值；uint/ivec packed terrain 或额外属性需要独立来源协议，失配时明确失败。 */
     public float[] valuesFor(String name, int shaderType) {
         if (shaderType != GlTokens.GL_FLOAT
                 && shaderType != GlTokens.GL_FLOAT_VEC2

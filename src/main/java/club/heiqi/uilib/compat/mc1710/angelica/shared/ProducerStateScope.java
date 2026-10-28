@@ -11,9 +11,9 @@ import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 
-/** 自有producer与Angelica有效matrix/VAO缓存的短scope。不拥有VAO/VBO，不生成几何。
- * 必须在producer第一次raw bind之前建立；任何pointer通过本接口，generic enable与FFP flags分别同步。
- * 保存effective和实际driver bindings各自入口值；外层backend guard仍负责完整driver raster/pass状态。 */
+/** 为自有 producer 与 Angelica 的有效 matrix/VAO 缓存提供短 scope，几何及 VAO/VBO 生命周期归 producer。
+ * 在首次 raw bind 前建立，pointer 通过此接口登记，generic enable 与 FFP flags 分别同步。
+ * 保存并恢复 effective 与 driver bindings 各自入口值；完整 driver raster/pass 状态由外层 backend guard 负责。 */
 public final class ProducerStateScope implements AutoCloseable {
     private final GlApi gl;
     private final Method getFloat,
@@ -75,7 +75,7 @@ public final class ProducerStateScope implements AutoCloseable {
         color = bindings.color;
         normalSetter = bindings.normalSetter;
         setFlags = bindings.setFlags;
-        // flags、normal、INSTANCE及其实体值属于当前scope，不随成员绑定固化。
+        // flags、normal、INSTANCE 及其实体值在当前 scope 入口捕获。
         oldFlags = drawState.vertexFlags();
         positionBit = bindings.positionBit.getInt(null);
         colorBit = bindings.colorBit.getInt(null);
@@ -127,7 +127,7 @@ public final class ProducerStateScope implements AutoCloseable {
             call(normalSetter, n[0], n[1], n[2]);
             call(color, c[0], c[1], c[2], c[3]);
             callOn(blockSetter, captured, context.state.blockEntityId);
-            // 源lightmap矩阵和历史纹理必须成对，GLSM绑定保留通知，driver双写确保采样源。
+            // 来源 lightmap 矩阵与历史纹理成对使用；GLSM 绑定保留通知，driver 双写确认采样源。
             call(activeTexture, GlTokens.GL_TEXTURE1);
             gl.glActiveTexture(GlTokens.GL_TEXTURE1);
             call(bindTexture, GlTokens.GL_TEXTURE_2D, context.state.lightmapTexture);
@@ -228,7 +228,7 @@ public final class ProducerStateScope implements AutoCloseable {
         call(enable, location);
     }
 
-    /** 在raw atlas绑定之前捕获的入口texture0；GLSM通知Iris材质/PBR状态，driver双写确认页面。 */
+    /** 绑定 atlas 页面，GLSM 通知 Iris 材质/PBR 状态，driver 双写确认采样页；入口 texture0 已在 raw 绑定前保存。 */
     public void bindTexture2D(int texture) {
         check();
         if (texture <= 0) throw new IllegalArgumentException("无效atlas texture");
@@ -302,7 +302,7 @@ public final class ProducerStateScope implements AutoCloseable {
     public void close() {
         if (closed) return;
         closed = true;
-        // effective缓存只能在此恢复；单项失败仍须归还其余状态，保留首错与后续清理错误。
+        // 此 scope 负责恢复 effective 缓存；单项失败后继续归还其余状态，保留首错与后续清理错误。
         Throwable failure = restoreMatrix(null, GlTokens.GL_PROJECTION, oldProjection);
         failure = restoreMatrix(failure, GlTokens.GL_MODELVIEW, oldModelView);
         failure = restoreCall(failure, activeTexture, null, GlTokens.GL_TEXTURE1);

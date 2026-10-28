@@ -13,9 +13,9 @@ import java.util.Objects;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** Angelica 已验证 ABI 的有序文字接缝；不依赖旧 font 度量。
- * optional mixin marker必须实际安装；priority不是安装证明。跨线程/错ABI直接诊断。
- * ReplaySink负责Iris兼容producer与effective状态guard；不得以UIshader伪装shaderpack支持。 */
+/** 按已验证 Angelica ABI 对接有序文字，文字度量由 UILib 提供。
+ * 安装状态通过实际 Mixin marker 确认；跨线程或 ABI 失配时报告错误。
+ * ReplaySink 负责 Iris pack producer 与有效状态 guard，pack 支持以实际 program/vertex ABI 验证为准。 */
 public final class AngelicaBridge implements OptionalFontHostBridge {
     private static AngelicaBridge active;
     private static final Runnable MERGED_TICKET = () -> {};
@@ -68,7 +68,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             record = lists.getMethod("recordComplexCommand", commandType);
             pause = lists.getMethod("pauseRecording");
             resume = lists.getMethod("resumeRecording", recorder);
-            // 精确辅助方法descriptor也提前检查，不等到第一次延期才发现失配。
+            // 构造时校验辅助方法的精确 descriptor，使 ABI 失配在启用延期路径前暴露。
             Class<?> cmds =
                     java.lang.reflect.Array.newInstance(
                                     Class.forName(font.getName() + "$FontDrawCmd", false, loader),
@@ -160,16 +160,16 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                             || (owner != null && ((Number) read(depth, owner)).intValue() > 0)
                             || !((List<?>) read(deferred, null)).isEmpty();
             HostProgramSnapshot program = snapshots.capture();
-            // #81 只有延期票据需在提交时并入本帧需求；即时drain的draw已由prepare准备同一需求。
+            // #81：延期票据在提交时并入本帧需求，即时 drain 的同一需求由 draw 的 prepare 登记。
             if (queued) sink.registerVisible(plan, context);
             if (queued && FontReplayRun.eligible(plan)) {
                 FontReplayRun tail = fontTail;
                 if (tail != null && tail.accepts(plan, context, program)) {
                     FontReplayRun.Addition addition = new FontReplayRun.Addition(plan);
-                    // 每原调用仍占一个sequence/容量并持有独立lease；overflow不能改变旧run。
+                    // 每次原调用各占一个 sequence/容量并持有独立 lease；溢出时保留旧 run。
                     queue.submit(MERGED_TICKET, lease);
                     transferred = true;
-                    // submit只入队且不调用回放，同宿主线程下已验证的追加条件在此仍成立。
+                    // submit 完成入队后，同宿主线程下已验证的追加条件仍成立。
                     tail.append(addition);
                 } else {
                     FontReplayRun run = new FontReplayRun(sink, plan, context, program);
@@ -208,7 +208,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
                 sink.draw(plan, context);
             });
         } finally {
-            // pause未取得recorder表示没有暂停所有权；2.2.28禁止resume(null)跨线程录制。
+            // 非 null recorder 赋予本次暂停的恢复权，finally 归还同一实例；null 时保持原状态，遵守 2.2.28 的 recorder 线程归属。
             if (recorder != null) invoke(resume, null, recorder);
         }
     }
@@ -226,7 +226,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     }
 
     private void register(Object segment, Object owner) {
-        // old segment分配了队列切点，首ticket绝不能合入切点之后的计划。
+        // old segment 划定队列切点，封闭首 ticket 的合并范围以保留切点两侧的顺序。
         clearFontTail();
         queue.sealed(segment);
     }
@@ -238,7 +238,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         Object match = find((List<?>) read(segments, owner), owner, start, end);
         if (match == null) match = find((List<?>) read(deferred, null), owner, start, end);
         if (match != null) {
-            // 同一segment的屏障只消费一次，避免重复提交已经回放的UILib文字。
+            // 同一 segment 的屏障消费一次，保持 UILib 文字的单次提交。
             if (replayed.containsKey(match)) return;
             if (!queue.containsOld(match))
                 throw new IllegalStateException("旧font segment未被seal hook登记");
@@ -284,7 +284,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         }
     }
 
-    /** 内部正常flush的discard在尾消费之前发生，不能取消尚未消费的新tail。 */
+    /** 内部 flush 的 discard 早于尾消费；保留新 tail，由最外层 endFlush 完成消费。 */
     public static void discarded() {
         if (active != null && active.flushDepth == 0) active.abort();
     }
@@ -294,7 +294,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
     }
 
     private void clearFontTail() {
-        // 普通屏障只封闭合并候选，已入队run仍必须由所属ticket正常绘制。
+        // 普通屏障封闭合并候选，已入队 run 仍由所属 ticket 绘制。
         fontTail = null;
     }
 

@@ -2,16 +2,16 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import java.lang.reflect.InvocationTargetException;
 
-/** 外部文字的同步消费边界；宿主批次必须在共享Prepared之前完成。
- * #74：viewport等状态切换会flush TESR并回调文字队列，不能在Prepared存活期间首次稳定宿主。
- * 稳定动作先于队列取票；宿主flush内同步回放借用外层边界，不再次preflush。
- * suspend只覆盖已稳定后的短回放及其全部GL/producer恢复，不延迟几何，也不放宽单Prepared合同。 */
+/** 外部文字的同步消费边界，宿主批次先于共享 Prepared 完成。
+ * #74：viewport 等状态切换会 flush TESR 并回调文字队列，宿主稳定先于取票和 Prepared 创建。
+ * 宿主 flush 内的同步回放复用外层已稳定边界，保留几何的同步提交顺序。
+ * 稳定后由 suspend 覆盖短回放及全部 GL/producer 恢复，维持单 Prepared 生命周期。 */
 final class ExternalReplayBoundary {
     private final DrawState state;
     private boolean active;
     ExternalReplayBoundary(DrawState state) { this.state = state; }
 
-    /** 已处于旧字体segment遍历中，不能再flush同一集合；仅保护插入其间的短回放。 */
+    /** 复用正在遍历旧字体 segment 的宿主边界，以 suspend 保护插入的短回放并保持集合遍历稳定。 */
     void withinHostFlush(Runnable replay) { run(replay, false); }
 
     void run(Runnable replay) { run(replay, true); }

@@ -10,7 +10,7 @@ import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.Remapper;
 import org.objectweb.asm.tree.*;
 
-/** #69 实机回归：UniMixins映射ASM包后插件必须可加载，不能出现同descriptor重载碰撞。 */
+/** 复现 #69 实机缺陷：验证 UniMixins 映射 ASM 包后的插件加载与方法签名唯一性。 */
 public final class UniMixinsPluginScenario {
     private static final String PLUGIN = "club.heiqi.uilib.compat.mixin.CompatMixinPlugin";
     private static byte[] bytes(InputStream input) throws IOException {
@@ -58,7 +58,7 @@ public final class UniMixinsPluginScenario {
             if (prefix == null) throw new AssertionError("实际UniMixins缺少插件合同");
             Class<?> transformer = loader.loadClass("io.github.legacymoddingmc.unimixins.compat.asm.ASMRemapperTransformer");
             Field realPrefix = transformer.getDeclaredField("realASMPackagePrefix"); realPrefix.setAccessible(true);
-            // 同生产探测结果，避免测试启动Launch；后续transform完整执行实际Jar实现。
+            // 直接提供与生产一致的探测结果，隔离 Launch 启动；后续 transform 完整执行实际 Jar 实现。
             realPrefix.set(null, prefix);
             Object remapper = transformer.getConstructor().newInstance();
             byte[] transformed = (byte[]) transformer.getMethod("transform", String.class, String.class, byte[].class).invoke(remapper, PLUGIN, PLUGIN, source);
@@ -81,7 +81,7 @@ public final class UniMixinsPluginScenario {
     public static void main(String[] args) throws Exception {
         byte[] source = bytes(UniMixinsPluginScenario.class.getClassLoader().getResourceAsStream(PLUGIN.replace('.', '/') + ".class"));
         unique(mapped(source, "org/spongepowered/asm/lib/"));
-        // 真实反例：重新加入被实机证伪的双ASM重载，重映射后检查必须拒绝。
+        // 重建实机已确认的双 ASM 重载反例，验证重映射后可检出签名冲突。
         ClassNode broken = new ClassNode(); new ClassReader(source).accept(broken, 0);
         for (MethodNode method : new ArrayList<>(broken.methods)) if (method.name.equals("preApply")) {
             MethodNode duplicate = new MethodNode(Opcodes.ACC_PUBLIC, method.name, method.desc.replace("org/objectweb/asm/", "org/spongepowered/asm/lib/"), null, null);

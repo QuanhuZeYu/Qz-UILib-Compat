@@ -2,8 +2,8 @@ package club.heiqi.uilib.compat.mc1710.angelica.shared;
 
 import club.heiqi.uilib.host.client.font.compat.FontHostOrderQueue;
 
-/** 使用生产边界和顺序队列，仅替换Angelica状态变更/GL/Prepared外部端点。
- * 复现#74的viewport -> host flush -> queue replay -> 第二个Prepared，而非比较源码字符串。 */
+/** 以替代 Angelica 状态变更、GL 与 Prepared 端点执行生产边界和顺序队列。
+ * 复现 #74 的 viewport → host flush → queue replay → 第二个 Prepared 调用链，验证几何顺序、单 Prepared 与租约释放。 */
 public final class ExternalReplayScenario {
     static final class Host implements DrawState {
         int suspended, preparations, preflushes, geometry, draws;
@@ -30,7 +30,7 @@ public final class ExternalReplayScenario {
             if (preparations != 0) throw new IllegalStateException("共享atlas只允许即时短Prepared");
             preparations++;
             try {
-                // 设置viewport会触发状态屏障；恢复producer/GL也会再次经过屏障。
+                // viewport 设置与 producer/GL 恢复均经过状态屏障，覆盖入口和清理阶段的回调。
                 stabilizeHost();
                 if (pending) throw new AssertionError("文字早于木牌几何");
                 draws++;
@@ -47,14 +47,14 @@ public final class ExternalReplayScenario {
         host.flushed = () -> boundary.run(queue::drainTail);
         queue.submit(() -> host.draw(false), () -> leases[0]++);
         host.pending = true;
-        // 显示列表即时回放的前置屏障必须先完成旧几何和旧ticket。
+        // 显示列表即时回放的前置屏障先完成旧几何与旧 ticket。
         boundary.run(() -> host.draw(false));
         require(host.draws == 2 && host.geometry == 1 && leases[0] == 1 && queue.pending() == 0,
                 "列表回放没有先完成几何与旧文字，或重复消费/吞票");
         int previous = host.preflushes;
         queue.submit(() -> host.draw(false), () -> leases[0]++);
         host.pending = true;
-        // 与真实宿主flushDeferredText相同，回调进入时Guard已由宿主持有。
+        // 对齐真实宿主 flushDeferredText：回调进入时 Guard 已由宿主持有。
         host.stabilizeHost();
         require(host.draws == 3 && leases[0] == 2 && host.preflushes == previous + 1,
                 "宿主屏障回调递归preflush或没有释放ticket");
@@ -68,7 +68,7 @@ public final class ExternalReplayScenario {
         catch (IllegalArgumentException expected) { require("draw failure".equals(expected.getMessage()), "异常被替换"); }
         require(host.suspended == 0 && host.preparations == 0 && leases[0] == 4 && queue.pending() == 0,
                 "异常退出没有恢复guard/Prepared或归还全部source lease");
-        // beforeOld与未seal尾段必须同样在边界内消费。
+        // beforeOld 与未 seal 尾段共用同一消费边界。
         Object old = new Object();
         queue.submit(() -> host.draw(false), () -> leases[0]++); queue.sealed(old);
         boundary.run(() -> queue.beforeOld(old));
@@ -79,7 +79,7 @@ public final class ExternalReplayScenario {
         queue.submit(() -> host.draw(false), () -> leases[0]++); queue.sealed(iterating);
         host.replayText = true;
         host.flushed = () -> boundary.withinHostFlush(() -> queue.beforeOld(iterating));
-        // 宿主正在遍历该segment，preflush会递归同一集合、内层先消费身份，外层随后找不到旧段。
+        // 宿主遍历 segment 时，递归 preflush 会先在内层消费身份并使外层丢失旧段；此处验证原遍历内消费。
         boundary.withinHostFlush(() -> queue.beforeOld(iterating));
         require(leases[0] == 7 && queue.pending() == 0 && host.replayText, "宿主旧段迭代不应再次启动宿主flush");
         host.replayText = false;
