@@ -16,9 +16,11 @@ import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
 /** 可选Angelica有效状态读取，仅缓存反射入口、不持mutable JOML或GL上下文实例。
- * 固定来源：GLSM glGetFloat(int,FloatBuffer)、getEffectiveAlphaState、texture-unit1 matrix；
+ * 来源随Angelica ABI变迁：新版本把query/状态入口拆到GLSMQueries/GLSMEnable等GLSM*类，
+ * 2.2.10—2.2.28等旧版本仍全部挂在GLStateManager；每个入口先取GLSM*、缺失再回退GLStateManager。
+ * 固定来源：glGetFloat(int,FloatBuffer)、getEffectiveAlphaState、texture-unit1 matrix；
  * raster/viewport/depth/scissor统一经GLSM有效query；无缓存特例的枚举由GLSM回退driver。
- * 存在但不匹配时显式失败，不假装driver等价。
+ * 两处都缺席即存在但不匹配，显式失败，不假装driver等价。
  * provider不拥有GL/字体对象；构造只解析入口，capture在宿主GL线程执行。 */
 public final class AngelicaMatrixStateProvider
         implements LwjglFontContextCapture.MatrixStateProvider {
@@ -83,20 +85,45 @@ public final class AngelicaMatrixStateProvider
         return new AngelicaMatrixStateProvider(glsm, loader, gl);
     }
 
+    /** 拆分后的GLSM*入口按真实资源选择；只提供原始header的ABI校验loader用空壳占位缺席类型，
+     * 因此不能以Class.forName成功判定目标存在，资源缺席一律返回null。 */
+    private static Class<?> optionalClass(ClassLoader loader, String type) {
+        try {
+            return GlsmAbi.type(loader, type);
+        } catch (ClassNotFoundException absent) {
+            return null;
+        } catch (LinkageError mismatch) {
+            throw new IllegalStateException("Angelica有效状态类无法加载，不能回退legacy矩阵", mismatch);
+        }
+    }
+
+    /** 新版本优先取GLSM*入口，旧版本回退GLStateManager；两处都缺席即真实ABI不匹配。 */
+    private static Method method(Class<?> split, Class<?> glsm, String name, Class<?>... parameters)
+            throws NoSuchMethodException {
+        return GlsmAbi.method(split, glsm, name, parameters);
+    }
+
     private AngelicaMatrixStateProvider(Class<?> glsm, ClassLoader loader, GlApi gl) {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
+        final Class<?> queries = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMQueries"),
+                enable = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMEnable"),
+                depthStencilAlpha =
+                        optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMDepthStencilAlpha"),
+                blendClass = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMBlend"),
+                rasterizer = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMRasterizer"),
+                texturesClass = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMTextures");
         try {
-            getFloat = glsm.getMethod("glGetFloat", int.class, FloatBuffer.class);
-            getInteger = glsm.getMethod("glGetInteger", int.class);
-            getIntegers = glsm.getMethod("glGetInteger", int.class, java.nio.IntBuffer.class);
-            getBooleans = glsm.getMethod("glGetBoolean", int.class, java.nio.ByteBuffer.class);
-            isEnabled = glsm.getMethod("glIsEnabled", int.class);
+            getFloat = method(queries, glsm, "glGetFloat", int.class, FloatBuffer.class);
+            getInteger = method(queries, glsm, "glGetInteger", int.class);
+            getIntegers = method(queries, glsm, "glGetInteger", int.class, java.nio.IntBuffer.class);
+            getBooleans = method(queries, glsm, "glGetBoolean", int.class, java.nio.ByteBuffer.class);
+            isEnabled = method(enable, glsm, "glIsEnabled", int.class);
             Class<?> blend =
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.states.BlendState", false, loader);
             blendConstructor = blend.getConstructor();
-            effectiveBlend = glsm.getMethod("getEffectiveBlendState", blend);
-            effectiveBlendEnabled = glsm.getMethod("isEffectiveBlendEnabled");
+            effectiveBlend = method(blendClass, glsm, "getEffectiveBlendState", blend);
+            effectiveBlendEnabled = method(blendClass, glsm, "isEffectiveBlendEnabled");
             String[] getters = {
                 "getSrcRgb",
                 "getDstRgb",
@@ -111,8 +138,8 @@ public final class AngelicaMatrixStateProvider
             };
             for (int i = 0; i < getters.length; i++) blendGetters[i] = blend.getMethod(getters[i]);
             caching = glsm.getMethod("isCachingEnabled");
-            getStencil = glsm.getMethod("getStencilState");
-            getPolygon = glsm.getMethod("getPolygonState");
+            getStencil = method(depthStencilAlpha, glsm, "getStencilState");
+            getPolygon = method(rasterizer, glsm, "getPolygonState");
             String[] stencilGetters = {
                 "getFuncBack",
                 "getRefBack",
@@ -130,11 +157,11 @@ public final class AngelicaMatrixStateProvider
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.states.AlphaState", false, loader);
             alphaConstructor = alpha.getConstructor();
-            getAlpha = glsm.getMethod("getEffectiveAlphaState", alpha);
+            getAlpha = method(depthStencilAlpha, glsm, "getEffectiveAlphaState", alpha);
             alphaFunction = alpha.getMethod("getFunction");
             alphaReference = alpha.getMethod("getReference");
-            alphaEnabled = glsm.getMethod("isEffectiveAlphaTestEnabled");
-            depthWrite = glsm.getMethod("isEffectiveDepthMaskEnabled");
+            alphaEnabled = method(depthStencilAlpha, glsm, "isEffectiveAlphaTestEnabled");
+            depthWrite = method(depthStencilAlpha, glsm, "isEffectiveDepthMaskEnabled");
             Class<?> shader =
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
@@ -144,7 +171,7 @@ public final class AngelicaMatrixStateProvider
             vectorY = vector.getField("y");
             vectorZ = vector.getField("z");
             vectorConstructor = vector.getConstructor();
-            getTextures = glsm.getMethod("getTextures");
+            getTextures = method(texturesClass, glsm, "getTextures");
             Class<?> textures = getTextures.getReturnType();
             unitMatrix = textures.getMethod("getTextureUnitMatrix", int.class);
             matrixGet = unitMatrix.getReturnType().getMethod("get", FloatBuffer.class);

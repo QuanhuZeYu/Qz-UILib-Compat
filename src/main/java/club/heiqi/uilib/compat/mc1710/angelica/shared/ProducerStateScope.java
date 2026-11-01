@@ -62,14 +62,23 @@ public final class ProducerStateScope implements AutoCloseable {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         Class<?> glsm =
                 Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-        getFloat = glsm.getMethod("glGetFloat", int.class, FloatBuffer.class);
-        getInteger = glsm.getMethod("glGetInteger", int.class);
-        matrixMode = glsm.getMethod("glMatrixMode", int.class);
-        loadMatrix = glsm.getMethod("glLoadMatrix", FloatBuffer.class);
-        bindVao = glsm.getMethod("glBindVertexArray", int.class);
-        bindBuffer = glsm.getMethod("glBindBuffer", int.class, int.class);
+        // 新版本把同一批GL入口拆到GLSM*；旧版本仍在GLStateManager，逐项按旧位置回退。
+        Class<?> queries = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMQueries"),
+                matrices = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMMatrices"),
+                vertexInput = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMVertexInput"),
+                buffers = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMBuffers"),
+                textureEntries = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMTextures"),
+                attribs = GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMCurrentAttribs");
+        getFloat = GlsmAbi.method(queries, glsm, "glGetFloat", int.class, FloatBuffer.class);
+        getInteger = GlsmAbi.method(queries, glsm, "glGetInteger", int.class);
+        matrixMode = GlsmAbi.method(matrices, glsm, "glMatrixMode", int.class);
+        loadMatrix = GlsmAbi.method(matrices, glsm, "glLoadMatrix", FloatBuffer.class);
+        bindVao = GlsmAbi.method(vertexInput, glsm, "glBindVertexArray", int.class);
+        bindBuffer = GlsmAbi.method(buffers, glsm, "glBindBuffer", int.class, int.class);
         pointer =
-                glsm.getMethod(
+                GlsmAbi.method(
+                        vertexInput,
+                        glsm,
                         "glVertexAttribPointer",
                         int.class,
                         int.class,
@@ -78,18 +87,28 @@ public final class ProducerStateScope implements AutoCloseable {
                         int.class,
                         long.class);
         integerPointer =
-                glsm.getMethod(
+                GlsmAbi.method(
+                        vertexInput,
+                        glsm,
                         "glVertexAttribIPointer",
                         int.class,
                         int.class,
                         int.class,
                         int.class,
                         long.class);
-        enable = glsm.getMethod("glEnableVertexAttribArray", int.class);
-        disable = glsm.getMethod("glDisableVertexAttribArray", int.class);
-        bindTexture = glsm.getMethod("glBindTexture", int.class, int.class);
-        activeTexture = glsm.getMethod("glActiveTexture", int.class);
-        color = glsm.getMethod("glColor4f", float.class, float.class, float.class, float.class);
+        enable = GlsmAbi.method(vertexInput, glsm, "glEnableVertexAttribArray", int.class);
+        disable = GlsmAbi.method(vertexInput, glsm, "glDisableVertexAttribArray", int.class);
+        bindTexture = GlsmAbi.method(textureEntries, glsm, "glBindTexture", int.class, int.class);
+        activeTexture = GlsmAbi.method(textureEntries, glsm, "glActiveTexture", int.class);
+        color =
+                GlsmAbi.method(
+                        attribs,
+                        glsm,
+                        "glColor4f",
+                        float.class,
+                        float.class,
+                        float.class,
+                        float.class);
         Class<?> vaoManager =
                 Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader);
         setFlags = vaoManager.getMethod("setCurrentVertexFlags", int.class);
@@ -106,7 +125,9 @@ public final class ProducerStateScope implements AutoCloseable {
         brightnessBit = flags.getField("BRIGHTNESS_BIT").getInt(null);
         Class<?> shader =
                 Class.forName("com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
-        normalSetter = glsm.getMethod("glNormal3f", float.class, float.class, float.class);
+        normalSetter =
+                GlsmAbi.method(
+                        attribs, glsm, "glNormal3f", float.class, float.class, float.class);
         Object normal = shader.getMethod("getCurrentNormal").invoke(null);
         Class<?> vector = normal.getClass();
         oldNormal =

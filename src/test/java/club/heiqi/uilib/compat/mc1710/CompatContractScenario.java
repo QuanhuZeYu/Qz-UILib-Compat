@@ -50,6 +50,7 @@ public final class CompatContractScenario {
         try (Resources loader = new Resources(new URL[] {new File(angelica).toURI().toURL(), new File(ae2).toURI().toURL()})) {
             require(expected.equals(AngelicaAbi.select(loader)), "选错实际Angelica ABI");
             actualIrisInputs(angelica, expected);
+            stateEntries(loader, "v2228".equals(expected));
             ClassNode glsm = node(loader, "com.gtnewhorizons.angelica.glsm.GLStateManager");
             MethodNode ctx = method(glsm, "ctx", "()Lcom/gtnewhorizons/angelica/glsm/GLContextState;");
             require(((ctx.access & Opcodes.ACC_PUBLIC) != 0) == publicContext, "ctx可见性证据变化");
@@ -103,6 +104,92 @@ public final class CompatContractScenario {
         }
     }
 
+    private static void member(ClassLoader loader, String type, String name, String descriptor) throws IOException {
+        has(loader, type, name, descriptor, true);
+    }
+    private static boolean has(ClassLoader loader, String type, String name, String descriptor) throws IOException {
+        return has(loader, type, name, descriptor, false);
+    }
+    private static boolean has(ClassLoader loader, String type, String name, String descriptor, boolean required) throws IOException {
+        if (loader.getResource(type.replace('.', '/') + ".class") == null) {
+            if (required) throw new AssertionError("缺少实际class: " + type);
+            return false;
+        }
+        for (MethodNode method : node(loader, type).methods)
+            if (method.name.equals(name) && method.desc.equals(descriptor)) return true;
+        if (required) throw new AssertionError(type + "缺少方法 " + name + descriptor);
+        return false;
+    }
+    /** 任一处具备即可：新版本把入口拆到GLSM*，旧版本仍在GLStateManager，生产端逐项回退。 */
+    private static void any(ClassLoader loader, String[] types, String name, String... descriptors) throws IOException {
+        for (String type : types) for (String descriptor : descriptors)
+            if (has(loader, type, name, descriptor)) return;
+        throw new AssertionError(Arrays.toString(types) + "缺少方法 " + name + Arrays.toString(descriptors));
+    }
+    private static void stateEntries(ClassLoader loader, boolean v2228) throws IOException {
+        final String root = "com.gtnewhorizons.angelica.glsm.";
+        final String glsm = root + "GLStateManager";
+        final String context = "L" + root.replace('.', '/') + "GLContextState;";
+        String[] queries = {glsm, root + "GLSMQueries"};
+        String[] enable = {glsm, root + "GLSMEnable"};
+        String[] depth = {glsm, root + "GLSMDepthStencilAlpha"};
+        String[] blend = {glsm, root + "GLSMBlend"};
+        String[] raster = {glsm, root + "GLSMRasterizer"};
+        String[] tex = {glsm, root + "GLSMTextures"};
+        String[] matrices = {glsm, root + "GLSMMatrices"};
+        String[] vertex = {glsm, root + "GLSMVertexInput"};
+        String[] buffers = {glsm, root + "GLSMBuffers"};
+        String[] attribs = {glsm, root + "GLSMCurrentAttribs"};
+        // provider：有效矩阵/光栅/纹理读取。
+        any(loader, queries, "glGetFloat", "(ILjava/nio/FloatBuffer;)V");
+        any(loader, queries, "glGetInteger", "(I)I");
+        any(loader, queries, "glGetInteger", "(ILjava/nio/IntBuffer;)V");
+        any(loader, queries, "glGetBoolean", "(ILjava/nio/ByteBuffer;)V");
+        any(loader, enable, "glIsEnabled", "(I)Z");
+        any(loader, depth, "isEffectiveAlphaTestEnabled", "()Z");
+        any(loader, depth, "isEffectiveDepthMaskEnabled", "()Z");
+        any(loader, depth, "getEffectiveAlphaState", "(L" + root.replace('.', '/') + "states/AlphaState;)L" + root.replace('.', '/') + "states/AlphaState;");
+        any(loader, depth, "getStencilState", "()L" + root.replace('.', '/') + "stacks/StencilStateStack;");
+        any(loader, blend, "getEffectiveBlendState", "(L" + root.replace('.', '/') + "states/BlendState;)L" + root.replace('.', '/') + "states/BlendState;");
+        any(loader, blend, "isEffectiveBlendEnabled", "()Z");
+        any(loader, raster, "getPolygonState", "()L" + root.replace('.', '/') + "stacks/PolygonStateStack;");
+        any(loader, tex, "getTextures", "()L" + root.replace('.', '/') + "states/TextureUnitArray;");
+        any(loader, tex, "glBindTexture", "(II)V");
+        any(loader, tex, "glActiveTexture", "(I)V");
+        any(loader, new String[] {glsm}, "isCachingEnabled", "()Z");
+        // producer：自有VAO/VBO回放入口。
+        any(loader, matrices, "glMatrixMode", "(I)V");
+        any(loader, matrices, "glLoadMatrix", "(Ljava/nio/FloatBuffer;)V");
+        any(loader, vertex, "glBindVertexArray", "(I)V");
+        any(loader, vertex, "glVertexAttribPointer", "(IIIZIJ)V");
+        any(loader, vertex, "glVertexAttribIPointer", "(IIIIJ)V");
+        any(loader, vertex, "glEnableVertexAttribArray", "(I)V");
+        any(loader, vertex, "glDisableVertexAttribArray", "(I)V");
+        any(loader, buffers, "glBindBuffer", "(II)V");
+        any(loader, attribs, "glColor4f", "(FFFF)V");
+        any(loader, attribs, "glNormal3f", "(FFF)V");
+        member(loader, root + "ffp.VAOManager", "setCurrentVertexFlags", "(I)V");
+        // draw/uniform：ABI按pipeline helper形状分代，不与GLSM拆分耦合。
+        if (v2228) {
+            member(loader, glsm, "ctx", "()" + context);
+            any(loader, new String[] {glsm, root + "GLSMDraws"}, "preDraw", "(" + context + "I)V");
+            member(loader, root + "ffp.VAOManager", "getVertexFlags", "()I");
+            member(loader, root + "CompatUniformManager", "refreshCompatUniforms", "(I" + context + ")Z");
+            member(loader, root + "hooks.BatchStateGuard", "suspend", "()V");
+            member(loader, root + "hooks.BatchStateGuard", "resume", "()V");
+            member(loader, glsm, "beforeUncapturedStateChange", "()V");
+            ClassNode state = node(loader, root + "GLContextState");
+            boolean vaos = false;
+            for (FieldNode field : state.fields)
+                if (field.name.equals("vaos") && field.desc.equals("L" + root.replace('.', '/') + "ffp/VAOManager;")) vaos = true;
+            require(vaos, "GLContextState缺少vaos上下文");
+        } else {
+            member(loader, glsm, "preDraw", "(I)V");
+            member(loader, root + "ffp.VAOManager", "getCurrentVertexFlags", "()I");
+            member(loader, root + "CompatUniformManager", "refreshCompatUniforms", "(I)Z");
+        }
+        System.out.println("ACTUAL_STATE_ENTRIES_PASS " + (v2228 ? "v2228" : "v2210") + " matrixProvider/producer/snapshot entries bound=true");
+    }
     private static Field field(Class<?> type, String name) throws Exception { Field field = type.getDeclaredField(name); field.setAccessible(true); return field; }
     private static Method declared(Class<?> type, String name, Class<?>... parameters) throws Exception { Method method = type.getDeclaredMethod(name, parameters); method.setAccessible(true); return method; }
     private static void monitor(boolean logical) throws Exception {

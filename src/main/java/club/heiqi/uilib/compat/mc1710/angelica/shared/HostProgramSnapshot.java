@@ -82,7 +82,10 @@ final class HostProgramSnapshot {
                 Class<?> glsm =
                         Class.forName(
                                 "com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-                Object textures = glsm.getMethod("getTextures").invoke(null);
+                Class<?> textureEntries =
+                        GlsmAbi.type(loader, "com.gtnewhorizons.angelica.glsm.GLSMTextures");
+                Object textures =
+                        GlsmAbi.method(textureEntries, glsm, "getTextures").invoke(null);
                 Object matrix =
                         textures.getClass()
                                 .getMethod("getTextureUnitMatrix", int.class)
