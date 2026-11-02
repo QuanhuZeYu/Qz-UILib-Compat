@@ -139,8 +139,6 @@ public final class OptionalIrisProgramScope implements GlProgramScope {
         translucent.setAccessible(true);
         oldTranslucency = translucent.get(pipeline);
         oldPhase = getPhase.invoke(pipeline);
-        Class<?> glsm =
-                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
         drawState = DrawState.bind(loader);
         packedLight = context.state.packedLight;
         normal = context.state.normal();

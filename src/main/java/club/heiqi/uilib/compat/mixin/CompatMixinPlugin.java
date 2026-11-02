@@ -17,7 +17,7 @@ public final class CompatMixinPlugin implements IMixinConfigPlugin {
         ClassLoader loader = getClass().getClassLoader();
         if (loader.getResource(target.replace('.', '/') + ".class") == null) return false;
         if (mixin.contains(".angelica.")) {
-            String abi = AngelicaAbi.select(loader);
+            String abi = AngelicaAbi.mixinFamily(AngelicaAbi.select(loader));
             return abi != null && mixin.contains("." + abi + ".");
         }
         if (mixin.contains(".ae2.")) {

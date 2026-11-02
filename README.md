@@ -10,6 +10,17 @@ Forge 1.7.10 的可选兼容 Mod，**1.0.0-beta1** 配套 **Qz-UILib 5.0.0-beta3
 
 Angelica、lwjgl3ify/RFB 和 AE2 均按需使用；只有已安装的目标 Mod 才启用相应适配。
 
+## 自行构建
+
+Windows:
+- Powershell: `./gradlew.bat build "-Porg.gradle.java.installations.paths=C:/Path/to/java8"`
+- CMD: `gradlew.bat build "-Porg.gradle.java.installations.paths=C:/Path/to/java8"`
+
+Linux/macOS: 
+- bash: `./gradlew build '-Porg.gradle.java.installations.paths=Path/to/jdk8'`
+
+构建结果位于`./build/libs`
+
 ## 适配内容
 
 - Angelica/Iris：字体提交顺序与显示列表回放。

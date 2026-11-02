@@ -79,10 +79,9 @@ final class HostProgramSnapshot {
                 item =
                         ((Number) capturedType.getMethod("getCurrentRenderedItem").invoke(captured))
                                 .intValue();
-                Class<?> glsm =
-                        Class.forName(
-                                "com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-                Object textures = glsm.getMethod("getTextures").invoke(null);
+                GlsmEntries entries = AngelicaVersions.entries(loader);
+                if (entries == null) throw new IllegalStateException("Angelica纹理入口缺席");
+                Object textures = entries.getTextures.invoke(null);
                 Object matrix =
                         textures.getClass()
                                 .getMethod("getTextureUnitMatrix", int.class)

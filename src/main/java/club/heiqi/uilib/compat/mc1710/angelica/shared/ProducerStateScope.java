@@ -60,39 +60,22 @@ public final class ProducerStateScope implements AutoCloseable {
             ClassLoader loader, GlApi gl, FontRenderContext context, HostProgramSnapshot source)
             throws ReflectiveOperationException {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
-        Class<?> glsm =
-                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-        getFloat = glsm.getMethod("glGetFloat", int.class, FloatBuffer.class);
-        getInteger = glsm.getMethod("glGetInteger", int.class);
-        matrixMode = glsm.getMethod("glMatrixMode", int.class);
-        loadMatrix = glsm.getMethod("glLoadMatrix", FloatBuffer.class);
-        bindVao = glsm.getMethod("glBindVertexArray", int.class);
-        bindBuffer = glsm.getMethod("glBindBuffer", int.class, int.class);
-        pointer =
-                glsm.getMethod(
-                        "glVertexAttribPointer",
-                        int.class,
-                        int.class,
-                        int.class,
-                        boolean.class,
-                        int.class,
-                        long.class);
-        integerPointer =
-                glsm.getMethod(
-                        "glVertexAttribIPointer",
-                        int.class,
-                        int.class,
-                        int.class,
-                        int.class,
-                        long.class);
-        enable = glsm.getMethod("glEnableVertexAttribArray", int.class);
-        disable = glsm.getMethod("glDisableVertexAttribArray", int.class);
-        bindTexture = glsm.getMethod("glBindTexture", int.class, int.class);
-        activeTexture = glsm.getMethod("glActiveTexture", int.class);
-        color = glsm.getMethod("glColor4f", float.class, float.class, float.class, float.class);
-        Class<?> vaoManager =
-                Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader);
-        setFlags = vaoManager.getMethod("setCurrentVertexFlags", int.class);
+        GlsmEntries entries = AngelicaVersions.entries(loader);
+        if (entries == null) throw new IllegalStateException("Angelica producer状态入口缺席");
+        getFloat = entries.getFloat;
+        getInteger = entries.getInteger;
+        matrixMode = entries.matrixMode;
+        loadMatrix = entries.loadMatrix;
+        bindVao = entries.bindVao;
+        bindBuffer = entries.bindBuffer;
+        pointer = entries.pointer;
+        integerPointer = entries.integerPointer;
+        enable = entries.enableAttrib;
+        disable = entries.disableAttrib;
+        setFlags = entries.setFlags;
+        activeTexture = entries.activeTexture;
+        bindTexture = entries.bindTexture;
+        color = entries.color;
         oldFlags = DrawState.bind(loader).vertexFlags();
         Class<?> flags =
                 Class.forName(
@@ -104,10 +87,8 @@ public final class ProducerStateScope implements AutoCloseable {
         textureBit = flags.getField("TEXTURE_BIT").getInt(null);
         normalBit = flags.getField("NORMAL_BIT").getInt(null);
         brightnessBit = flags.getField("BRIGHTNESS_BIT").getInt(null);
-        Class<?> shader =
-                Class.forName("com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
-        normalSetter = glsm.getMethod("glNormal3f", float.class, float.class, float.class);
-        Object normal = shader.getMethod("getCurrentNormal").invoke(null);
+        normalSetter = entries.normalSetter;
+        Object normal = entries.getNormal.invoke(null);
         Class<?> vector = normal.getClass();
         oldNormal =
                 new float[] {
