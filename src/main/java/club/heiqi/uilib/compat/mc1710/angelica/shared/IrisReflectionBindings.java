@@ -95,22 +95,24 @@ final class IrisReflectionBindings {
 
         Producer(ClassLoader loader) throws ReflectiveOperationException {
             Class<?> glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-            getFloat = glsm.getMethod("glGetFloat", int.class, FloatBuffer.class);
-            getInteger = glsm.getMethod("glGetInteger", int.class);
-            matrixMode = glsm.getMethod("glMatrixMode", int.class);
-            loadMatrix = glsm.getMethod("glLoadMatrix", FloatBuffer.class);
-            bindVao = glsm.getMethod("glBindVertexArray", int.class);
-            bindBuffer = glsm.getMethod("glBindBuffer", int.class, int.class);
-            pointer = glsm.getMethod("glVertexAttribPointer", int.class, int.class, int.class,
+            club.heiqi.uilib.compat.mc1710.AngelicaAbi.StateProfile abi =
+                    club.heiqi.uilib.compat.mc1710.AngelicaAbi.states(glsm);
+            getFloat = abi.method("glGetFloat", int.class, FloatBuffer.class);
+            getInteger = abi.method("glGetInteger", int.class);
+            matrixMode = abi.method("glMatrixMode", int.class);
+            loadMatrix = abi.method("glLoadMatrix", FloatBuffer.class);
+            bindVao = abi.method("glBindVertexArray", int.class);
+            bindBuffer = abi.method("glBindBuffer", int.class, int.class);
+            pointer = abi.method("glVertexAttribPointer", int.class, int.class, int.class,
                     boolean.class, int.class, long.class);
-            integerPointer = glsm.getMethod("glVertexAttribIPointer", int.class, int.class, int.class,
+            integerPointer = abi.method("glVertexAttribIPointer", int.class, int.class, int.class,
                     int.class, long.class);
-            enable = glsm.getMethod("glEnableVertexAttribArray", int.class);
-            disable = glsm.getMethod("glDisableVertexAttribArray", int.class);
-            bindTexture = glsm.getMethod("glBindTexture", int.class, int.class);
-            activeTexture = glsm.getMethod("glActiveTexture", int.class);
-            color = glsm.getMethod("glColor4f", float.class, float.class, float.class, float.class);
-            normalSetter = glsm.getMethod("glNormal3f", float.class, float.class, float.class);
+            enable = abi.method("glEnableVertexAttribArray", int.class);
+            disable = abi.method("glDisableVertexAttribArray", int.class);
+            bindTexture = abi.method("glBindTexture", int.class, int.class);
+            activeTexture = abi.method("glActiveTexture", int.class);
+            color = abi.method("glColor4f", float.class, float.class, float.class, float.class);
+            normalSetter = abi.method("glNormal3f", float.class, float.class, float.class);
             Class<?> vao = Class.forName("com.gtnewhorizons.angelica.glsm.ffp.VAOManager", false, loader);
             setFlags = vao.getMethod("setCurrentVertexFlags", int.class);
             Class<?> flags = Class.forName("com.gtnewhorizon.gtnhlib.client.renderer.vertex.VertexFlags", false, loader);

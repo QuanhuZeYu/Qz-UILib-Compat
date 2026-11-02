@@ -84,7 +84,8 @@ final class HostProgramSnapshot {
             Method entity = captured.getMethod("getCurrentRenderedEntity");
             Method item = captured.getMethod("getCurrentRenderedItem");
             Class<?> glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-            Method textures = glsm.getMethod("getTextures");
+            Method textures = club.heiqi.uilib.compat.mc1710.AngelicaAbi.states(glsm)
+                    .textures.getMethod("getTextures");
             getEntity = entity;
             getItem = item;
             getTextures = textures;

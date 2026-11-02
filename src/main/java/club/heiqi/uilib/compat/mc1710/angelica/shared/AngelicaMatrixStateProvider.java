@@ -87,20 +87,22 @@ public final class AngelicaMatrixStateProvider
     private AngelicaMatrixStateProvider(Class<?> glsm, ClassLoader loader, GlApi gl) {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         try {
-            getFloat = bind(glsm.getMethod("glGetFloat", int.class, FloatBuffer.class),
+            club.heiqi.uilib.compat.mc1710.AngelicaAbi.StateProfile abi =
+                    club.heiqi.uilib.compat.mc1710.AngelicaAbi.states(glsm);
+            getFloat = bind(abi.queries.getMethod("glGetFloat", int.class, FloatBuffer.class),
                     void.class, int.class, FloatBuffer.class);
-            getInteger = bind(glsm.getMethod("glGetInteger", int.class), int.class, int.class);
-            getIntegers = bind(glsm.getMethod("glGetInteger", int.class, IntBuffer.class),
+            getInteger = bind(abi.queries.getMethod("glGetInteger", int.class), int.class, int.class);
+            getIntegers = bind(abi.queries.getMethod("glGetInteger", int.class, IntBuffer.class),
                     void.class, int.class, IntBuffer.class);
-            getBooleans = bind(glsm.getMethod("glGetBoolean", int.class, ByteBuffer.class),
+            getBooleans = bind(abi.queries.getMethod("glGetBoolean", int.class, ByteBuffer.class),
                     void.class, int.class, ByteBuffer.class);
-            isEnabled = bind(glsm.getMethod("glIsEnabled", int.class), boolean.class, int.class);
+            isEnabled = bind(abi.enable.getMethod("glIsEnabled", int.class), boolean.class, int.class);
             Class<?> blend =
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.states.BlendState", false, loader);
             blendConstructor = constructor(blend);
-            effectiveBlend = bind(glsm.getMethod("getEffectiveBlendState", blend), Object.class, Object.class);
-            effectiveBlendEnabled = bind(glsm.getMethod("isEffectiveBlendEnabled"), boolean.class);
+            effectiveBlend = bind(abi.blend.getMethod("getEffectiveBlendState", blend), Object.class, Object.class);
+            effectiveBlendEnabled = bind(abi.blend.getMethod("isEffectiveBlendEnabled"), boolean.class);
             String[] getters = {
                 "getSrcRgb",
                 "getDstRgb",
@@ -116,7 +118,7 @@ public final class AngelicaMatrixStateProvider
             for (int i = 0; i < getters.length; i++)
                 blendGetters[i] = bind(blend.getMethod(getters[i]), i < 6 ? int.class : float.class, Object.class);
             caching = bind(glsm.getMethod("isCachingEnabled"), boolean.class);
-            Method stencil = glsm.getMethod("getStencilState"), polygon = glsm.getMethod("getPolygonState");
+            Method stencil = abi.depthStencilAlpha.getMethod("getStencilState"), polygon = abi.rasterizer.getMethod("getPolygonState");
             getStencil = bind(stencil, Object.class);
             getPolygon = bind(polygon, Object.class);
             String[] stencilGetters = {
@@ -138,12 +140,12 @@ public final class AngelicaMatrixStateProvider
                             "com.gtnewhorizons.angelica.glsm.states.AlphaState", false, loader);
             alphaConstructor = constructor(alpha);
             // 此入口填充 dest；先校验返回引用的 ABI，再适配为 void，查询结果从本次新建的 dest 读取。
-            getAlpha = bind(glsm.getMethod("getEffectiveAlphaState", alpha), Object.class, Object.class)
+            getAlpha = bind(abi.depthStencilAlpha.getMethod("getEffectiveAlphaState", alpha), Object.class, Object.class)
                     .asType(MethodType.methodType(void.class, Object.class));
             alphaFunction = bind(alpha.getMethod("getFunction"), int.class, Object.class);
             alphaReference = bind(alpha.getMethod("getReference"), float.class, Object.class);
-            alphaEnabled = bind(glsm.getMethod("isEffectiveAlphaTestEnabled"), boolean.class);
-            depthWrite = bind(glsm.getMethod("isEffectiveDepthMaskEnabled"), boolean.class);
+            alphaEnabled = bind(abi.depthStencilAlpha.getMethod("isEffectiveAlphaTestEnabled"), boolean.class);
+            depthWrite = bind(abi.depthStencilAlpha.getMethod("isEffectiveDepthMaskEnabled"), boolean.class);
             Class<?> shader =
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
@@ -154,7 +156,7 @@ public final class AngelicaMatrixStateProvider
             vectorY = getter(vector.getField("y"), float.class, Object.class);
             vectorZ = getter(vector.getField("z"), float.class, Object.class);
             vectorConstructor = constructor(vector);
-            Method textureArray = glsm.getMethod("getTextures");
+            Method textureArray = abi.textures.getMethod("getTextures");
             getTextures = bind(textureArray, Object.class);
             Class<?> textures = textureArray.getReturnType();
             Method matrix = textures.getMethod("getTextureUnitMatrix", int.class);

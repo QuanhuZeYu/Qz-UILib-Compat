@@ -5,17 +5,37 @@ import club.heiqi.uilib.host.client.image.ItemStateScope;
 
 /** 为 UILib 物品绘制保存并恢复 Angelica 缓存栈与 Iris 上下文。 */
 public final class AngelicaItemPort extends ItemStateScope.Port {
+    private final club.heiqi.uilib.compat.mc1710.AngelicaAbi.StateProfile abi;
+
     public AngelicaItemPort(ClassLoader loader) {
-        super(load(loader));
+        this(load(loader));
     }
-    private static Class<?> load(ClassLoader loader) {
-        try { return Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader); }
-        catch (ClassNotFoundException error) { throw new IllegalStateException(error); }
+    private AngelicaItemPort(club.heiqi.uilib.compat.mc1710.AngelicaAbi.StateProfile abi) {
+        // 父 Port 的 active/clientActive 直接使用 multitexture；其余操作由 call 按同一 profile 路由。
+        super(abi.textures);
+        this.abi = abi;
+    }
+    private static club.heiqi.uilib.compat.mc1710.AngelicaAbi.StateProfile load(ClassLoader loader) {
+        try { return club.heiqi.uilib.compat.mc1710.AngelicaAbi.states(
+                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader)); }
+        catch (ReflectiveOperationException error) { throw new IllegalStateException("Angelica物品状态ABI不匹配", error); }
+    }
+
+    @Override protected Object call(String name, Class<?>[] signature, Object... args) {
+        try { return abi.method(name, signature).invoke(null, args); }
+        catch (java.lang.reflect.InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException("Angelica物品状态操作失败: " + name, cause);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Angelica物品状态入口不匹配: " + name, error);
+        }
     }
     @Override protected int integer(int name) {
         // GLSM 模拟纹理与矩阵集合按宿主 MAX_TEXTURE_UNITS 分配，driver 的跨阶段 combined 上限属于另一能力范围。
         if (name == 34018 || name == 35661) {
-            try { return type.getField("MAX_TEXTURE_UNITS").getInt(null); }
+            try { return abi.glStateManager.getField("MAX_TEXTURE_UNITS").getInt(null); }
             catch (ReflectiveOperationException error) {
                 throw new IllegalStateException("无法读取 Angelica 物品纹理单元能力", error);
             }
@@ -26,7 +46,7 @@ public final class AngelicaItemPort extends ItemStateScope.Port {
     @Override public int clientDepth() {
 
             try {
-                Method ctx = type.getDeclaredMethod("ctx");
+                Method ctx = abi.glStateManager.getDeclaredMethod("ctx");
                 ctx.setAccessible(true);
                 Object context = ctx.invoke(null);
                 java.lang.reflect.Field depth =
