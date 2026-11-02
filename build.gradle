@@ -20,7 +20,7 @@ repositories {
     maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
     mavenCentral()
 }
-configurations { hostInterface; coreInterface; platformInterface; lwjgl3Binding; rfbApi; nativeInputHost; angelica2210Abi; angelica2228Abi; ae21050Abi; ae21080Abi; unimixinsAbi }
+configurations { hostInterface; coreInterface; platformInterface; lwjgl3Binding; rfbApi; nativeInputHost; angelica2210Abi; angelica2228Abi; angelica2243Abi; ae21050Abi; ae21080Abi; ae21095Abi; unimixinsAbi }
 configurations.configureEach { transitive = false }
 dependencies {
     hostInterface "asia.quanhuzeyu.uilib:minecraft-host:$hostVersion:development-java8"
@@ -35,8 +35,10 @@ dependencies {
     // 正式发行 Jar 提供真实 descriptor，ABI 验证以这些制品为证据，输入缺失时失败。
     angelica2210Abi 'com.github.GTNewHorizons:Angelica:2.2.10@jar'
     angelica2228Abi 'com.github.GTNewHorizons:Angelica:2.2.28@jar'
+    angelica2243Abi 'com.github.GTNewHorizons:Angelica:2.2.43@jar'
     ae21050Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1050-GTNH@jar'
     ae21080Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1080-GTNH@jar'
+    ae21095Abi 'com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1095-GTNH@jar'
     unimixinsAbi 'io.github.legacymoddingmc:unimixins:0.3.1@jar'
     testImplementation 'org.ow2.asm:asm-commons:9.9'
     compileOnly 'org.ow2.asm:asm-tree:9.9'
@@ -162,12 +164,17 @@ def abiInputs = [
     ae21050Abi:'GT_New_Horizons_2.9.0-beta-3_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1050-GTNH.jar',
     angelica2228Abi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/angelica-2.2.28.jar',
     ae21080Abi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1080-GTNH.jar',
+    angelica2243Abi:'GT_New_Horizons_2.9.0_Java_17-26/.minecraft/mods/angelica-2.2.43.jar',
+    ae21095Abi:'GT_New_Horizons_2.9.0_Java_17-26/.minecraft/mods/appliedenergistics2-rv3-beta-1095-GTNH.jar',
     unimixinsAbi:'GT_New_Horizons_2.9.0-RC-2_Java_17-26/.minecraft/mods/+unimixins-all-1.7.10-0.3.1.jar'
 ]
-// compatPrismRoot 显式选择实例 Jar；默认解析公开正式坐标，真实输入缺失时失败。
+// 单项 Jar 覆盖可只选择正式包输入；其余输入沿明确 Maven 坐标，不必读取其他实例。
+// compatPrismRoot 保留整组实例选择入口，真实输入缺失时失败。
 def actualJar = { String name ->
+    def explicit = providers.gradleProperty(name + 'Jar')
     def prism = providers.gradleProperty('compatPrismRoot')
-    def artifact = prism.isPresent() ? file(prism.get() + '/instances/' + abiInputs[name]) : configurations.getByName(name).singleFile
+    def artifact = explicit.isPresent() ? file(explicit.get())
+        : prism.isPresent() ? file(prism.get() + '/instances/' + abiInputs[name]) : configurations.getByName(name).singleFile
     if (!artifact.isFile()) throw new GradleException('真实 ABI 输入不存在：' + artifact)
     artifact
 }
@@ -192,6 +199,13 @@ tasks.register('compatContractScenario', JavaExec) {
     mainClass = 'club.heiqi.uilib.compat.mc1710.CompatContractScenario'
     dependsOn 'abiInputEvidence'
     doFirst { setArgs(['angelica2210Abi', 'ae21050Abi', 'angelica2228Abi', 'ae21080Abi'].collect { actualJar(it).absolutePath }) }
+}
+// 保留原 beta/RC ABI 覆盖，正式 2.9.0 复用同一合同入口校验其实际 Angelica/AE2。
+tasks.register('gtnh290ContractScenario', JavaExec) {
+    dependsOn testClasses, 'abiInputEvidence'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.CompatContractScenario'
+    doFirst { setArgs(['angelica2210Abi', 'ae21050Abi', 'angelica2243Abi', 'ae21095Abi'].collect { actualJar(it).absolutePath }) }
 }
 tasks.register('gtnhCharacterMappingScenario', JavaExec) {
     dependsOn testClasses
@@ -246,10 +260,13 @@ tasks.register('irisPassTargetScenario', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'club.heiqi.uilib.compat.mc1710.angelica.shared.IrisPassTargetGlScenario'
-    doFirst { setArgs(['angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath }) }
+    doFirst { setArgs(['angelica2210Abi', 'angelica2228Abi', 'angelica2243Abi'].collect { actualJar(it).absolutePath }) }
 }
 
-if (providers.gradleProperty('compatPrismRoot').isPresent()) check.dependsOn 'irisPassTargetScenario'
+if (providers.gradleProperty('compatPrismRoot').isPresent()
+    || ['angelica2210Abi', 'angelica2228Abi', 'angelica2243Abi'].any { providers.gradleProperty(it + 'Jar').isPresent() }) {
+    check.dependsOn 'irisPassTargetScenario'
+}
 
 tasks.register('irisProducerBatchScenario', JavaExec) {
     dependsOn testClasses
@@ -272,7 +289,13 @@ tasks.register('unimixinsPluginScenario', JavaExec) {
     dependsOn 'abiInputEvidence'
     doFirst { setArgs(['unimixinsAbi', 'angelica2210Abi', 'angelica2228Abi'].collect { actualJar(it).absolutePath }) }
 }
-check.dependsOn 'unimixinsPluginScenario', 'verifyArtifact', 'compatContractScenario', 'angelicaReplayScenario', 'irisProducerBatchScenario', 'nativeSdlTextInputScenario'
+tasks.register('unimixinsPlugin290Scenario', JavaExec) {
+    dependsOn testClasses, 'abiInputEvidence'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'club.heiqi.uilib.compat.mc1710.UniMixinsPluginScenario'
+    doFirst { setArgs(['unimixinsAbi', 'angelica2210Abi', 'angelica2243Abi'].collect { actualJar(it).absolutePath }) }
+}
+check.dependsOn 'gtnh290ContractScenario', 'unimixinsPlugin290Scenario', 'unimixinsPluginScenario', 'verifyArtifact', 'compatContractScenario', 'angelicaReplayScenario', 'irisProducerBatchScenario', 'nativeSdlTextInputScenario'
 publishing {
     publications { compat(MavenPublication) { from components.java } }
     repositories { maven { name = 'release'; url = layout.buildDirectory.dir('release-maven') } }

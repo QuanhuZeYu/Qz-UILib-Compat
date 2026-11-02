@@ -67,7 +67,8 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
             for (MethodNode method : node.methods) {
                 if (method.name.equals("<clinit>")) continue;
                 int access = method.access & ~Opcodes.ACC_NATIVE;
-                if (boxedIntegerResult && node.name.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")
+                if (boxedIntegerResult && (node.name.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")
+                        || node.name.equals("com/gtnewhorizons/angelica/glsm/GLSMQueries"))
                         && method.name.equals("glGetInteger") && method.desc.equals("(I)I"))
                     method.desc = "(I)Ljava/lang/Integer;";
                 MethodVisitor body = output.visitMethod(access, method.name, method.desc, null, null);
@@ -122,7 +123,12 @@ final class ActualJarHeaders extends ClassLoader implements AutoCloseable {
     /** 为查询入口供值，验证生产 provider 与真实 descriptor 的接线；GLSM/Iris 有效状态算法由宿主验证覆盖。 */
     private boolean matrixBody(MethodVisitor body, String owner, MethodNode method, Type result) {
         String projection = "club/heiqi/uilib/compat/mc1710/CompatContractScenario$Projection";
-        if (owner.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")) {
+        // 正式版拆出精确查询与状态 owner；投影仍只替换实际 Jar 中已有的方法体。
+        if (owner.equals("com/gtnewhorizons/angelica/glsm/GLStateManager")
+                || owner.equals("com/gtnewhorizons/angelica/glsm/GLSMQueries")
+                || owner.equals("com/gtnewhorizons/angelica/glsm/GLSMEnable")
+                || owner.equals("com/gtnewhorizons/angelica/glsm/GLSMDepthStencilAlpha")
+                || owner.equals("com/gtnewhorizons/angelica/glsm/GLSMRasterizer")) {
             String query = null;
             if (method.name.equals("glGetInteger") && method.desc.equals("(I)I")) query = "matrixInteger";
             if (method.name.equals("glIsEnabled") && method.desc.equals("(I)Z")) query = "matrixEnabled";

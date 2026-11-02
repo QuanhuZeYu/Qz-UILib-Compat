@@ -146,8 +146,9 @@ public final class CompatContractScenario {
             headers.matrixQueries = true;
             AngelicaMatrixStateProvider provider = (AngelicaMatrixStateProvider) AngelicaMatrixStateProvider.optional(headers, gl);
             Class<?> glsm = headers.loadClass("com.gtnewhorizons.angelica.glsm.GLStateManager");
-            Projection.matrixStencil = uninitialized(glsm.getMethod("getStencilState").getReturnType());
-            Projection.matrixPolygon = uninitialized(glsm.getMethod("getPolygonState").getReturnType());
+            AngelicaAbi.StateProfile states = AngelicaAbi.states(glsm);
+            Projection.matrixStencil = uninitialized(states.depthStencilAlpha.getMethod("getStencilState").getReturnType());
+            Projection.matrixPolygon = uninitialized(states.rasterizer.getMethod("getPolygonState").getReturnType());
             Projection.matrixCalls = 0; Projection.matrixCaching = false;
             Projection.matrixIntegerValue = 37; Projection.matrixFloatValue = 0.25f; Projection.matrixEnabledValue = true;
             require(provider.integer(0x0D33) == 37 && Projection.matrixName == 0x0D33, "int参数/返回值错误");

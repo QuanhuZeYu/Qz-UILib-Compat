@@ -60,6 +60,7 @@ public final class ActualIrisPass {
             types.put("net/coderbot/iris/gl/blending/" + name, Type.getInternalName(UnsupportedOverride.class));
         types.put("net/coderbot/iris/gl/blending/DepthColorStorage", Type.getInternalName(DrawBoundary.class));
         types.put("com/gtnewhorizons/angelica/glsm/GLStateManager", Type.getInternalName(DrawBoundary.class));
+        types.put("com/gtnewhorizons/angelica/glsm/GLSMRasterizer", Type.getInternalName(DrawBoundary.class));
         types.put("com/gtnewhorizons/angelica/iris/IrisDisplayListState", Type.getInternalName(DrawBoundary.class));
         Remapper remapper = new Remapper() {
             @Override public String map(String name) {
@@ -81,8 +82,9 @@ public final class ActualIrisPass {
         init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
         init.visitInsn(Opcodes.RETURN); init.visitMaxs(0, 0); init.visitEnd();
         List<String> methods = new ArrayList<>();
-        for (MethodNode method : node.methods) if ((method.name.equals("use") || method.name.equals("useNow"))
-                && method.desc.equals("()V")) {
+        // 2.2.43 的 useNow 将原有状态路由拆到 applyState，完整保留其实际控制流。
+        for (MethodNode method : node.methods) if ((method.name.equals("use") || method.name.equals("useNow")
+                || method.name.equals("applyState")) && method.desc.equals("()V")) {
             // MethodRemapper 仅映射类型/owner/descriptor；跳转、字段名、常量和调用顺序均来自原 Jar。
             method.accept(new MethodRemapper(output.visitMethod(method.access, method.name,
                     remapper.mapMethodDesc(method.desc), null, null), remapper));
@@ -172,6 +174,10 @@ public final class ActualIrisPass {
         public static void glViewport(int x, int y, int width, int height) { org.lwjgl.opengl.GL32C.glViewport(x, y, width, height); }
         // 独立 GL 场景立即执行 Pass 路由，display-list 延期由游戏场景验证。
         public static void runProgramTransition(Runnable transition) { transition.run(); }
+        public static <T> void runProgramTransition(java.util.function.Consumer<T> transition, T state) { transition.accept(state); }
+        // 独立 GL 场景没有打开 exit capture，沿实际 Jar 的空闲 false 与无需恢复分支。
+        public static boolean suspendExitCapture() { return false; }
+        public static void resumeExitCapture(boolean suspended) { }
     }
     /** 真实方法体触发 push，此处校验 owner；pack 的 custom uniform 求值由游戏场景验证。 */
     public static final class UniformsFixture {
