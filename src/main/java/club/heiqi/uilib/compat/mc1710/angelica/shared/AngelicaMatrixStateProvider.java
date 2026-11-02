@@ -4,7 +4,6 @@ import club.heiqi.uilib.host.client.font.compat.*;
 import club.heiqi.uilib.host.client.font.context.*;
 import club.heiqi.uilib.host.client.gl.*;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
@@ -16,15 +15,15 @@ import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
 /** 可选Angelica有效状态读取，仅缓存反射入口、不持mutable JOML或GL上下文实例。
- * 来源随Angelica ABI变迁：新版本把query/状态入口拆到GLSMQueries/GLSMEnable等GLSM*类，
- * 2.2.10—2.2.28等旧版本仍全部挂在GLStateManager；每个入口先取GLSM*、缺失再回退GLStateManager。
+ * 入口由版本目录的GsmEntries绑定：2.2.10/2.2.28在GLStateManager，2.2.40+在GLSM*分组类。
  * 固定来源：glGetFloat(int,FloatBuffer)、getEffectiveAlphaState、texture-unit1 matrix；
  * raster/viewport/depth/scissor统一经GLSM有效query；无缓存特例的枚举由GLSM回退driver。
- * 两处都缺席即存在但不匹配，显式失败，不假装driver等价。
+ * 绑定失败即真实ABI不匹配，显式失败，不假装driver等价。
  * provider不拥有GL/字体对象；构造只解析入口，capture在宿主GL线程执行。 */
 public final class AngelicaMatrixStateProvider
         implements LwjglFontContextCapture.MatrixStateProvider {
     private final GlApi gl;
+    private final GlsmEntries entries;
     // 同一provider只在所属GL线程同步查询；三种view共用有界scratch，结果在下一次查询前复制。
     private final ByteBuffer queryBytes = ByteBuffer.allocateDirect(1024).order(ByteOrder.nativeOrder());
     private final FloatBuffer queryFloats = queryBytes.asFloatBuffer();
@@ -35,31 +34,6 @@ public final class AngelicaMatrixStateProvider
         return gl;
     }
 
-    private final Method getFloat,
-            getAlpha,
-            alphaEnabled,
-            depthWrite,
-            getNormal,
-            getTextures,
-            unitMatrix,
-            unitBinding,
-            bindingValue,
-            matrixGet,
-            blockEntity,
-            lightingFactor,
-            unitState,
-            unitEnabled;
-    private final Constructor<?> alphaConstructor, vectorConstructor;
-    private final Method alphaFunction, alphaReference;
-    private final Method getInteger,
-            getIntegers,
-            getBooleans,
-            isEnabled,
-            effectiveBlendEnabled,
-            effectiveBlend;
-    private final Constructor<?> blendConstructor;
-    private final Method[] blendGetters = new Method[10], backStencilGetters = new Method[7];
-    private final Method caching, getStencil, getPolygon, offsetFactor, offsetUnits;
     private static final int[] BACK_STENCIL_NAMES = {
         GlTokens.GL_STENCIL_BACK_FUNC,
         GlTokens.GL_STENCIL_BACK_REF,
@@ -69,129 +43,17 @@ public final class AngelicaMatrixStateProvider
         GlTokens.GL_STENCIL_BACK_PASS_DEPTH_FAIL,
         GlTokens.GL_STENCIL_BACK_PASS_DEPTH_PASS
     };
-    private final Field vectorX, vectorY, vectorZ, instance;
-    private final LightmapState lightmap;
 
     public static LwjglFontContextCapture.MatrixStateProvider optional(
             ClassLoader loader, GlApi gl) {
-        final Class<?> glsm;
-        try {
-            glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-        } catch (ClassNotFoundException absent) {
-            return LwjglFontContextCapture.compatibility(gl);
-        } catch (LinkageError mismatch) {
-            throw new IllegalStateException("Angelica有效状态类无法加载，不能回退legacy矩阵", mismatch);
-        }
-        return new AngelicaMatrixStateProvider(glsm, loader, gl);
+        GlsmEntries entries = AngelicaVersions.entries(loader);
+        if (entries == null) return LwjglFontContextCapture.compatibility(gl);
+        return new AngelicaMatrixStateProvider(entries, gl);
     }
 
-    /** 拆分后的GLSM*入口按真实资源选择；只提供原始header的ABI校验loader用空壳占位缺席类型，
-     * 因此不能以Class.forName成功判定目标存在，资源缺席一律返回null。 */
-    private static Class<?> optionalClass(ClassLoader loader, String type) {
-        try {
-            return GlsmAbi.type(loader, type);
-        } catch (ClassNotFoundException absent) {
-            return null;
-        } catch (LinkageError mismatch) {
-            throw new IllegalStateException("Angelica有效状态类无法加载，不能回退legacy矩阵", mismatch);
-        }
-    }
-
-    /** 新版本优先取GLSM*入口，旧版本回退GLStateManager；两处都缺席即真实ABI不匹配。 */
-    private static Method method(Class<?> split, Class<?> glsm, String name, Class<?>... parameters)
-            throws NoSuchMethodException {
-        return GlsmAbi.method(split, glsm, name, parameters);
-    }
-
-    private AngelicaMatrixStateProvider(Class<?> glsm, ClassLoader loader, GlApi gl) {
+    private AngelicaMatrixStateProvider(GlsmEntries entries, GlApi gl) {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
-        final Class<?> queries = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMQueries"),
-                enable = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMEnable"),
-                depthStencilAlpha =
-                        optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMDepthStencilAlpha"),
-                blendClass = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMBlend"),
-                rasterizer = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMRasterizer"),
-                texturesClass = optionalClass(loader, "com.gtnewhorizons.angelica.glsm.GLSMTextures");
-        try {
-            getFloat = method(queries, glsm, "glGetFloat", int.class, FloatBuffer.class);
-            getInteger = method(queries, glsm, "glGetInteger", int.class);
-            getIntegers = method(queries, glsm, "glGetInteger", int.class, java.nio.IntBuffer.class);
-            getBooleans = method(queries, glsm, "glGetBoolean", int.class, java.nio.ByteBuffer.class);
-            isEnabled = method(enable, glsm, "glIsEnabled", int.class);
-            Class<?> blend =
-                    Class.forName(
-                            "com.gtnewhorizons.angelica.glsm.states.BlendState", false, loader);
-            blendConstructor = blend.getConstructor();
-            effectiveBlend = method(blendClass, glsm, "getEffectiveBlendState", blend);
-            effectiveBlendEnabled = method(blendClass, glsm, "isEffectiveBlendEnabled");
-            String[] getters = {
-                "getSrcRgb",
-                "getDstRgb",
-                "getSrcAlpha",
-                "getDstAlpha",
-                "getEquationRgb",
-                "getEquationAlpha",
-                "getBlendColorR",
-                "getBlendColorG",
-                "getBlendColorB",
-                "getBlendColorA"
-            };
-            for (int i = 0; i < getters.length; i++) blendGetters[i] = blend.getMethod(getters[i]);
-            caching = glsm.getMethod("isCachingEnabled");
-            getStencil = method(depthStencilAlpha, glsm, "getStencilState");
-            getPolygon = method(rasterizer, glsm, "getPolygonState");
-            String[] stencilGetters = {
-                "getFuncBack",
-                "getRefBack",
-                "getValueMaskBack",
-                "getWriteMaskBack",
-                "getFailOpBack",
-                "getZFailOpBack",
-                "getZPassOpBack"
-            };
-            for (int i = 0; i < stencilGetters.length; i++)
-                backStencilGetters[i] = getStencil.getReturnType().getMethod(stencilGetters[i]);
-            offsetFactor = getPolygon.getReturnType().getMethod("getOffsetFactor");
-            offsetUnits = getPolygon.getReturnType().getMethod("getOffsetUnits");
-            Class<?> alpha =
-                    Class.forName(
-                            "com.gtnewhorizons.angelica.glsm.states.AlphaState", false, loader);
-            alphaConstructor = alpha.getConstructor();
-            getAlpha = method(depthStencilAlpha, glsm, "getEffectiveAlphaState", alpha);
-            alphaFunction = alpha.getMethod("getFunction");
-            alphaReference = alpha.getMethod("getReference");
-            alphaEnabled = method(depthStencilAlpha, glsm, "isEffectiveAlphaTestEnabled");
-            depthWrite = method(depthStencilAlpha, glsm, "isEffectiveDepthMaskEnabled");
-            Class<?> shader =
-                    Class.forName(
-                            "com.gtnewhorizons.angelica.glsm.ffp.ShaderManager", false, loader);
-            getNormal = shader.getMethod("getCurrentNormal");
-            Class<?> vector = getNormal.getReturnType();
-            vectorX = vector.getField("x");
-            vectorY = vector.getField("y");
-            vectorZ = vector.getField("z");
-            vectorConstructor = vector.getConstructor();
-            getTextures = method(texturesClass, glsm, "getTextures");
-            Class<?> textures = getTextures.getReturnType();
-            unitMatrix = textures.getMethod("getTextureUnitMatrix", int.class);
-            matrixGet = unitMatrix.getReturnType().getMethod("get", FloatBuffer.class);
-            unitBinding = textures.getMethod("getTextureUnitBindings", int.class);
-            bindingValue = unitBinding.getReturnType().getMethod("getBinding");
-            unitState = textures.getMethod("getTextureUnitStates", int.class);
-            unitEnabled = unitState.getReturnType().getMethod("isEnabled");
-            lightmap = LightmapState.bind(loader);
-            Class<?> captured =
-                    Class.forName(
-                            "net.coderbot.iris.uniforms.CapturedRenderingState", false, loader);
-            instance = captured.getField("INSTANCE");
-            blockEntity = captured.getMethod("getCurrentRenderedBlockEntity");
-            Class<?> lighting =
-                    Class.forName(
-                            "com.gtnewhorizons.angelica.glsm.ffp.FFPVertexLighting", false, loader);
-            lightingFactor = lighting.getMethod("modulatesVertexColor", vector);
-        } catch (ReflectiveOperationException | LinkageError error) {
-            throw new IllegalStateException("Angelica有效状态ABI不匹配", error);
-        }
+        this.entries = entries;
     }
 
     @Override
@@ -200,43 +62,44 @@ public final class AngelicaMatrixStateProvider
             float[] p = read(GlTokens.GL_PROJECTION_MATRIX, 16),
                     mv = read(GlTokens.GL_MODELVIEW_MATRIX, 16),
                     color = read(GlTokens.GL_CURRENT_COLOR, 4);
-            Object alpha = alphaConstructor.newInstance();
-            getAlpha.invoke(null, alpha);
-            Object textures = getTextures.invoke(null);
+            Object alpha = entries.alphaConstructor.newInstance();
+            entries.getAlpha.invoke(null, alpha);
+            Object textures = entries.getTextures.invoke(null);
             int texture =
-                    ((Number) bindingValue.invoke(unitBinding.invoke(textures, 1))).intValue();
+                    ((Number) entries.bindingValue.invoke(entries.unitBinding.invoke(textures, 1)))
+                            .intValue();
             // 专用宿主font判据：BatchingFontRenderer.isWorldSpaceText以m33()==0识别透视。
             // 它不是通用world分类；custom projection应使用显式MatrixStateProvider。
             boolean lit =
                     p[15] == 0
                             && texture != 0
-                            && (Boolean) unitEnabled.invoke(unitState.invoke(textures, 1));
+                            && (Boolean) entries.unitEnabled.invoke(entries.unitState.invoke(textures, 1));
             float u = 0, v = 0;
             int packed = 0;
             if (lit) {
                 float[] m = new float[16];
                 FloatBuffer out = floats(16);
-                matrixGet.invoke(unitMatrix.invoke(textures, 1), out);
+                entries.matrixGet.invoke(entries.unitMatrix.invoke(textures, 1), out);
                 for (int i = 0; i < 16; i++) m[i] = out.get(i);
-                float x = lightmap.x(), y = lightmap.y();
+                float x = entries.lightmap.x(), y = entries.lightmap.y();
                 u = m[0] * x + m[4] * y + m[12];
                 v = m[1] * x + m[5] * y + m[13];
-                packed = lightmap.packed();
+                packed = entries.lightmap.packed();
             }
-            Object n = getNormal.invoke(null);
+            Object n = entries.getNormal.invoke(null);
             float[] normal = vector(n);
             float[] factor = {1, 1, 1};
             if (p[15] == 0) {
-                Object dest = vectorConstructor.newInstance();
-                if ((Boolean) lightingFactor.invoke(null, dest)) factor = vector(dest);
+                Object dest = entries.vectorConstructor.newInstance();
+                if ((Boolean) entries.lightingFactor.invoke(null, dest)) factor = vector(dest);
             }
             return new MatrixState(
                     p,
                     mv,
                     color,
-                    (Boolean) alphaEnabled.invoke(null),
-                    ((Number) alphaFunction.invoke(alpha)).intValue(),
-                    ((Number) alphaReference.invoke(alpha)).floatValue(),
+                    (Boolean) entries.alphaEnabled.invoke(null),
+                    ((Number) entries.alphaFunction.invoke(alpha)).intValue(),
+                    ((Number) entries.alphaReference.invoke(alpha)).floatValue(),
                     lit,
                     lit ? texture : 0,
                     u,
@@ -244,7 +107,7 @@ public final class AngelicaMatrixStateProvider
                     packed,
                     normal,
                     factor,
-                    ((Number) blockEntity.invoke(instance.get(null))).intValue());
+                    ((Number) entries.blockEntity.invoke(entries.instance.get(null))).intValue());
         } catch (ReflectiveOperationException | LinkageError error) {
             throw new IllegalStateException("Angelica有效context捕捉失败；未使用driver假矩阵", error);
         }
@@ -253,7 +116,7 @@ public final class AngelicaMatrixStateProvider
     @Override
     public boolean depthWrite() {
         try {
-            return (Boolean) depthWrite.invoke(null);
+            return (Boolean) entries.depthWrite.invoke(null);
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("Angelica effective depthWrite读取失败", error);
         }
@@ -262,12 +125,14 @@ public final class AngelicaMatrixStateProvider
     @Override
     public int integer(int name) {
         try {
-            if ((Boolean) caching.invoke(null))
+            if ((Boolean) entries.caching.invoke(null))
                 for (int i = 0; i < BACK_STENCIL_NAMES.length; i++)
                     if (name == BACK_STENCIL_NAMES[i])
-                        return ((Number) backStencilGetters[i].invoke(getStencil.invoke(null)))
+                        return ((Number)
+                                        entries.backStencilGetters[i].invoke(
+                                                entries.getStencil.invoke(null)))
                                 .intValue();
-            return ((Number) getInteger.invoke(null, name)).intValue();
+            return ((Number) entries.getInteger.invoke(null, name)).intValue();
         } catch (ReflectiveOperationException error) {
             throw failure(error);
         }
@@ -280,7 +145,7 @@ public final class AngelicaMatrixStateProvider
             queryIntegers.clear();
             queryIntegers.limit(Math.max(16, count));
             IntBuffer out = queryIntegers;
-            getIntegers.invoke(null, name, out);
+            entries.getIntegers.invoke(null, name, out);
             int[] a = new int[count];
             for (int i = 0; i < count; i++) a[i] = out.get(i);
             return a;
@@ -292,7 +157,7 @@ public final class AngelicaMatrixStateProvider
     @Override
     public boolean enabled(int name) {
         try {
-            return (Boolean) isEnabled.invoke(null, name);
+            return (Boolean) entries.isEnabled.invoke(null, name);
         } catch (ReflectiveOperationException error) {
             throw failure(error);
         }
@@ -305,7 +170,7 @@ public final class AngelicaMatrixStateProvider
             queryBytes.clear();
             queryBytes.limit(Math.max(16, count));
             ByteBuffer out = queryBytes;
-            getBooleans.invoke(null, name, out);
+            entries.getBooleans.invoke(null, name, out);
             boolean[] a = new boolean[count];
             for (int i = 0; i < count; i++) a[i] = out.get(i) != 0;
             return a;
@@ -320,13 +185,13 @@ public final class AngelicaMatrixStateProvider
             if (count == 1
                     && (name == GlTokens.GL_POLYGON_OFFSET_FACTOR
                             || name == GlTokens.GL_POLYGON_OFFSET_UNITS)
-                    && (Boolean) caching.invoke(null))
+                    && (Boolean) entries.caching.invoke(null))
                 return new float[] {
                     ((Number)
                                     (name == GlTokens.GL_POLYGON_OFFSET_FACTOR
-                                                    ? offsetFactor
-                                                    : offsetUnits)
-                                            .invoke(getPolygon.invoke(null)))
+                                                    ? entries.offsetFactor
+                                                    : entries.offsetUnits)
+                                            .invoke(entries.getPolygon.invoke(null)))
                             .floatValue()
                 };
             return read(name, count);
@@ -341,16 +206,16 @@ public final class AngelicaMatrixStateProvider
         // glGet未覆盖，额外读取公开state getter（caching关闭则仍走GLSM query）。
         // scissor box的宿主setter直接写driver，query真实fallback。Iris锁blend须取readEffective。
         try {
-            Object blend = effectiveBlend.invoke(null, blendConstructor.newInstance());
+            Object blend = entries.effectiveBlend.invoke(null, entries.blendConstructor.newInstance());
             FontRenderContext.RasterState raw = HostRasterCapture.capture(this);
             int[] values = new int[6];
             float[] color = new float[4];
             for (int i = 0; i < 6; i++)
-                values[i] = ((Number) blendGetters[i].invoke(blend)).intValue();
+                values[i] = ((Number) entries.blendGetters[i].invoke(blend)).intValue();
             for (int i = 0; i < 4; i++)
-                color[i] = ((Number) blendGetters[i + 6].invoke(blend)).floatValue();
+                color[i] = ((Number) entries.blendGetters[i + 6].invoke(blend)).floatValue();
             return new FontRenderContext.RasterState(
-                    (Boolean) effectiveBlendEnabled.invoke(null),
+                    (Boolean) entries.effectiveBlendEnabled.invoke(null),
                     values[0],
                     values[1],
                     values[2],
@@ -391,12 +256,14 @@ public final class AngelicaMatrixStateProvider
     }
 
     private float[] vector(Object v) throws IllegalAccessException {
-        return new float[] {vectorX.getFloat(v), vectorY.getFloat(v), vectorZ.getFloat(v)};
+        return new float[] {
+            entries.vectorX.getFloat(v), entries.vectorY.getFloat(v), entries.vectorZ.getFloat(v)
+        };
     }
 
     private float[] read(int name, int length) throws ReflectiveOperationException {
         FloatBuffer buffer = floats(length);
-        getFloat.invoke(null, name, buffer);
+        entries.getFloat.invoke(null, name, buffer);
         float[] result = new float[length];
         for (int i = 0; i < length; i++) result[i] = buffer.get(i);
         return result;

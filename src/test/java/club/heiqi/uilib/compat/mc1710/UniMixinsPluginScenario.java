@@ -46,7 +46,7 @@ public final class UniMixinsPluginScenario {
             return super.loadClass(name, resolve);
         }
     }
-    private static void actual(byte[] source, String uniMixins, String angelica, String abi) throws Exception {
+    private static void actual(byte[] source, String uniMixins, String angelica, String abi, String mixinAbi) throws Exception {
         try (RuntimeLoader loader = new RuntimeLoader(new URL[] {new File(uniMixins).toURI().toURL(), new File(angelica).toURI().toURL()})) {
             ClassNode contract = new ClassNode();
             new ClassReader(bytes(loader.getResourceAsStream("org/spongepowered/asm/mixin/extensibility/IMixinConfigPlugin.class"))).accept(contract, ClassReader.SKIP_CODE);
@@ -72,10 +72,10 @@ public final class UniMixinsPluginScenario {
             String target = "com.gtnewhorizons.angelica.client.font.BatchingFontRenderer";
             for (String candidate : new String[] {"v2210", "v2228"}) {
                 boolean enabled = (Boolean) select.invoke(instance, target, "club.heiqi.uilib.compat.mixin.mc1710.angelica." + candidate + ".AngelicaFontOrderMixin");
-                if (enabled != candidate.equals(abi)) throw new AssertionError("插件选错目标ABI " + abi + " -> " + candidate);
+                if (enabled != candidate.equals(mixinAbi)) throw new AssertionError("插件选错目标ABI " + abi + " -> " + candidate);
             }
             if ((Boolean) select.invoke(instance, "absent.Target", "mc1710.angelica.v2210.Any")) throw new AssertionError("缺席目标启用");
-            System.out.println("ACTUAL_UNIMIXINS_PLUGIN_PASS " + abi + " prefix=" + prefix + " transformedUnique=true loaded=true interfaceMethodsBound=true singleAbiSelected=true");
+            System.out.println("ACTUAL_UNIMIXINS_PLUGIN_PASS " + abi + " mixin=" + mixinAbi + " prefix=" + prefix + " transformedUnique=true loaded=true interfaceMethodsBound=true singleAbiSelected=true");
         }
     }
     public static void main(String[] args) throws Exception {
@@ -91,7 +91,10 @@ public final class UniMixinsPluginScenario {
         try { unique(mapped(writer.toByteArray(), "org/spongepowered/asm/lib/")); } catch (AssertionError expected) { rejected = true; }
         if (!rejected) throw new AssertionError("未捕获实际双重声明回归");
         System.out.println("UNIMIXINS_DUPLICATE_GUARD_PASS currentUnique=true oldDualOverloadRejected=true");
-        if (args.length != 3) throw new IllegalArgumentException("必须提供正式 UniMixins 和两个 Angelica Jar");
-        actual(source, args[0], args[1], "v2210"); actual(source, args[0], args[2], "v2228");
+        if (args.length != 4) throw new IllegalArgumentException("必须提供正式 UniMixins 和三个 Angelica Jar");
+        actual(source, args[0], args[1], "v2210", "v2210");
+        actual(source, args[0], args[2], "v2228", "v2228");
+        // 2.2.40+管线helper与接缝同2.2.28，Mixin必须落到v2228家族实现。
+        actual(source, args[0], args[3], "v2243", "v2228");
     }
 }

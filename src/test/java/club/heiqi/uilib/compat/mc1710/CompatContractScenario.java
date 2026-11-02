@@ -50,7 +50,7 @@ public final class CompatContractScenario {
         try (Resources loader = new Resources(new URL[] {new File(angelica).toURI().toURL(), new File(ae2).toURI().toURL()})) {
             require(expected.equals(AngelicaAbi.select(loader)), "选错实际Angelica ABI");
             actualIrisInputs(angelica, expected);
-            stateEntries(loader, "v2228".equals(expected));
+            stateEntries(loader, expected);
             ClassNode glsm = node(loader, "com.gtnewhorizons.angelica.glsm.GLStateManager");
             MethodNode ctx = method(glsm, "ctx", "()Lcom/gtnewhorizons/angelica/glsm/GLContextState;");
             require(((ctx.access & Opcodes.ACC_PUBLIC) != 0) == publicContext, "ctx可见性证据变化");
@@ -120,59 +120,60 @@ public final class CompatContractScenario {
         if (required) throw new AssertionError(type + "缺少方法 " + name + descriptor);
         return false;
     }
-    /** 任一处具备即可：新版本把入口拆到GLSM*，旧版本仍在GLStateManager，生产端逐项回退。 */
-    private static void any(ClassLoader loader, String[] types, String name, String... descriptors) throws IOException {
-        for (String type : types) for (String descriptor : descriptors)
-            if (has(loader, type, name, descriptor)) return;
-        throw new AssertionError(Arrays.toString(types) + "缺少方法 " + name + Arrays.toString(descriptors));
-    }
-    private static void stateEntries(ClassLoader loader, boolean v2228) throws IOException {
+    /** provider/producer/snapshot的每个入口在目标版本中的真实归属：2.2.40+必须已拆分，之前必须仍在GLStateManager。 */
+    private static void stateEntries(ClassLoader loader, String abi) throws IOException {
         final String root = "com.gtnewhorizons.angelica.glsm.";
         final String glsm = root + "GLStateManager";
         final String context = "L" + root.replace('.', '/') + "GLContextState;";
-        String[] queries = {glsm, root + "GLSMQueries"};
-        String[] enable = {glsm, root + "GLSMEnable"};
-        String[] depth = {glsm, root + "GLSMDepthStencilAlpha"};
-        String[] blend = {glsm, root + "GLSMBlend"};
-        String[] raster = {glsm, root + "GLSMRasterizer"};
-        String[] tex = {glsm, root + "GLSMTextures"};
-        String[] matrices = {glsm, root + "GLSMMatrices"};
-        String[] vertex = {glsm, root + "GLSMVertexInput"};
-        String[] buffers = {glsm, root + "GLSMBuffers"};
-        String[] attribs = {glsm, root + "GLSMCurrentAttribs"};
+        final boolean split = AngelicaAbi.V2243.equals(abi);
+        final boolean contextState = !AngelicaAbi.V2210.equals(abi);
+        String queries = split ? root + "GLSMQueries" : glsm,
+                enable = split ? root + "GLSMEnable" : glsm,
+                depth = split ? root + "GLSMDepthStencilAlpha" : glsm,
+                blend = split ? root + "GLSMBlend" : glsm,
+                raster = split ? root + "GLSMRasterizer" : glsm,
+                tex = split ? root + "GLSMTextures" : glsm,
+                matrices = split ? root + "GLSMMatrices" : glsm,
+                vertex = split ? root + "GLSMVertexInput" : glsm,
+                buffers = split ? root + "GLSMBuffers" : glsm,
+                attribs = split ? root + "GLSMCurrentAttribs" : glsm;
+        for (String type : new String[] {"GLSMQueries", "GLSMEnable", "GLSMDepthStencilAlpha", "GLSMBlend", "GLSMRasterizer", "GLSMTextures", "GLSMMatrices", "GLSMVertexInput", "GLSMBuffers", "GLSMCurrentAttribs", "GLSMDraws"})
+            require((loader.getResource((root + type).replace('.', '/') + ".class") != null) == split, "GLSM拆分归属与版本不符: " + type);
+        String states = root.replace('.', '/') + "states/";
+        String stacks = root.replace('.', '/') + "stacks/";
         // provider：有效矩阵/光栅/纹理读取。
-        any(loader, queries, "glGetFloat", "(ILjava/nio/FloatBuffer;)V");
-        any(loader, queries, "glGetInteger", "(I)I");
-        any(loader, queries, "glGetInteger", "(ILjava/nio/IntBuffer;)V");
-        any(loader, queries, "glGetBoolean", "(ILjava/nio/ByteBuffer;)V");
-        any(loader, enable, "glIsEnabled", "(I)Z");
-        any(loader, depth, "isEffectiveAlphaTestEnabled", "()Z");
-        any(loader, depth, "isEffectiveDepthMaskEnabled", "()Z");
-        any(loader, depth, "getEffectiveAlphaState", "(L" + root.replace('.', '/') + "states/AlphaState;)L" + root.replace('.', '/') + "states/AlphaState;");
-        any(loader, depth, "getStencilState", "()L" + root.replace('.', '/') + "stacks/StencilStateStack;");
-        any(loader, blend, "getEffectiveBlendState", "(L" + root.replace('.', '/') + "states/BlendState;)L" + root.replace('.', '/') + "states/BlendState;");
-        any(loader, blend, "isEffectiveBlendEnabled", "()Z");
-        any(loader, raster, "getPolygonState", "()L" + root.replace('.', '/') + "stacks/PolygonStateStack;");
-        any(loader, tex, "getTextures", "()L" + root.replace('.', '/') + "states/TextureUnitArray;");
-        any(loader, tex, "glBindTexture", "(II)V");
-        any(loader, tex, "glActiveTexture", "(I)V");
-        any(loader, new String[] {glsm}, "isCachingEnabled", "()Z");
+        member(loader, queries, "glGetFloat", "(ILjava/nio/FloatBuffer;)V");
+        member(loader, queries, "glGetInteger", "(I)I");
+        member(loader, queries, "glGetInteger", "(ILjava/nio/IntBuffer;)V");
+        member(loader, queries, "glGetBoolean", "(ILjava/nio/ByteBuffer;)V");
+        member(loader, enable, "glIsEnabled", "(I)Z");
+        member(loader, depth, "isEffectiveAlphaTestEnabled", "()Z");
+        member(loader, depth, "isEffectiveDepthMaskEnabled", "()Z");
+        member(loader, depth, "getEffectiveAlphaState", "(L" + states + "AlphaState;)L" + states + "AlphaState;");
+        member(loader, depth, "getStencilState", "()L" + stacks + "StencilStateStack;");
+        member(loader, blend, "getEffectiveBlendState", "(L" + states + "BlendState;)L" + states + "BlendState;");
+        member(loader, blend, "isEffectiveBlendEnabled", "()Z");
+        member(loader, raster, "getPolygonState", "()L" + stacks + "PolygonStateStack;");
+        member(loader, tex, "getTextures", "()L" + states + "TextureUnitArray;");
+        member(loader, tex, "glBindTexture", "(II)V");
+        member(loader, tex, "glActiveTexture", "(I)V");
+        member(loader, glsm, "isCachingEnabled", "()Z");
         // producer：自有VAO/VBO回放入口。
-        any(loader, matrices, "glMatrixMode", "(I)V");
-        any(loader, matrices, "glLoadMatrix", "(Ljava/nio/FloatBuffer;)V");
-        any(loader, vertex, "glBindVertexArray", "(I)V");
-        any(loader, vertex, "glVertexAttribPointer", "(IIIZIJ)V");
-        any(loader, vertex, "glVertexAttribIPointer", "(IIIIJ)V");
-        any(loader, vertex, "glEnableVertexAttribArray", "(I)V");
-        any(loader, vertex, "glDisableVertexAttribArray", "(I)V");
-        any(loader, buffers, "glBindBuffer", "(II)V");
-        any(loader, attribs, "glColor4f", "(FFFF)V");
-        any(loader, attribs, "glNormal3f", "(FFF)V");
+        member(loader, matrices, "glMatrixMode", "(I)V");
+        member(loader, matrices, "glLoadMatrix", "(Ljava/nio/FloatBuffer;)V");
+        member(loader, vertex, "glBindVertexArray", "(I)V");
+        member(loader, vertex, "glVertexAttribPointer", "(IIIZIJ)V");
+        member(loader, vertex, "glVertexAttribIPointer", "(IIIIJ)V");
+        member(loader, vertex, "glEnableVertexAttribArray", "(I)V");
+        member(loader, vertex, "glDisableVertexAttribArray", "(I)V");
+        member(loader, buffers, "glBindBuffer", "(II)V");
+        member(loader, attribs, "glColor4f", "(FFFF)V");
+        member(loader, attribs, "glNormal3f", "(FFF)V");
         member(loader, root + "ffp.VAOManager", "setCurrentVertexFlags", "(I)V");
-        // draw/uniform：ABI按pipeline helper形状分代，不与GLSM拆分耦合。
-        if (v2228) {
+        // draw/uniform：按pipeline helper形状分代；拆分代的前置入口在GLSMDraws。
+        if (contextState) {
             member(loader, glsm, "ctx", "()" + context);
-            any(loader, new String[] {glsm, root + "GLSMDraws"}, "preDraw", "(" + context + "I)V");
+            member(loader, split ? root + "GLSMDraws" : glsm, "preDraw", "(" + context + "I)V");
             member(loader, root + "ffp.VAOManager", "getVertexFlags", "()I");
             member(loader, root + "CompatUniformManager", "refreshCompatUniforms", "(I" + context + ")Z");
             member(loader, root + "hooks.BatchStateGuard", "suspend", "()V");
@@ -188,7 +189,7 @@ public final class CompatContractScenario {
             member(loader, root + "ffp.VAOManager", "getCurrentVertexFlags", "()I");
             member(loader, root + "CompatUniformManager", "refreshCompatUniforms", "(I)Z");
         }
-        System.out.println("ACTUAL_STATE_ENTRIES_PASS " + (v2228 ? "v2228" : "v2210") + " matrixProvider/producer/snapshot entries bound=true");
+        System.out.println("ACTUAL_STATE_ENTRIES_PASS " + abi + " split=" + split + " matrixProvider/producer/snapshot entries exact=true");
     }
     private static Field field(Class<?> type, String name) throws Exception { Field field = type.getDeclaredField(name); field.setAccessible(true); return field; }
     private static Method declared(Class<?> type, String name, Class<?>... parameters) throws Exception { Method method = type.getDeclaredMethod(name, parameters); method.setAccessible(true); return method; }
@@ -248,7 +249,10 @@ public final class CompatContractScenario {
     }
     public static void main(String[] args) throws Exception {
         absent(); monitor(false); monitor(true);
-        if (args.length == 4) { actual(args[0], args[1], "v2210", false); actual(args[2], args[3], "v2228", true); }
-        else throw new IllegalArgumentException("必须提供两组正式 Angelica/AE2 Jar，不能跳过真实 ABI 检查");
+        if (args.length == 6) {
+            actual(args[0], args[1], AngelicaAbi.V2210, false);
+            actual(args[2], args[3], AngelicaAbi.V2228, true);
+            actual(args[4], args[5], AngelicaAbi.V2243, true);
+        } else throw new IllegalArgumentException("必须提供三组正式 Angelica/AE2 Jar，不能跳过真实 ABI 检查");
     }
 }
